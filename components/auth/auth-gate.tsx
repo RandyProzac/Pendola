@@ -116,6 +116,8 @@ function applyRemoteState(remoteState: RemoteWorkspaceState) {
       entityMentions: remoteState.entityMentions,
       aiConversations: remoteState.aiConversations,
       aiResponseCache: [],
+      aiSettings: remoteState.aiSettings ?? state.aiSettings,
+      writerPreferences: remoteState.writerPreferences ?? state.writerPreferences,
       currentProjectId: nextCurrentProjectId,
     };
   });

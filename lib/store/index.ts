@@ -35,6 +35,7 @@ import {
   syncResourceRemote,
   syncScenarioDeletionRemote,
   syncScenarioRemote,
+  syncUserSettingsRemote,
 } from '@/lib/supabase/store-sync'
 import type {
   Project,
@@ -1163,6 +1164,11 @@ export const useProjectStore = create<ProjectStore>()(
 
       updateAISettings: (settings) => {
         set((state) => ({ aiSettings: { ...state.aiSettings, ...settings } }))
+        const nextState = get()
+        syncUserSettingsRemote({
+          aiSettings: nextState.aiSettings,
+          writerPreferences: nextState.writerPreferences,
+        })
       },
 
       writerPreferences: DEFAULT_WRITER_PREFERENCES,
@@ -1174,6 +1180,11 @@ export const useProjectStore = create<ProjectStore>()(
             ...preferences,
           },
         }))
+        const nextState = get()
+        syncUserSettingsRemote({
+          aiSettings: nextState.aiSettings,
+          writerPreferences: nextState.writerPreferences,
+        })
       },
 
       entityMentions: [],
@@ -1713,6 +1724,10 @@ export const useProjectStore = create<ProjectStore>()(
             isGenerating: false,
           })),
           aiResponseCache: (state.aiResponseCache || []).slice(0, MAX_AI_RESPONSE_CACHE_ENTRIES),
+          aiSettings: {
+            provider: state.aiSettings?.provider || 'ollama',
+            ...state.aiSettings,
+          },
           writerPreferences: {
             ...DEFAULT_WRITER_PREFERENCES,
             ...(state.writerPreferences || {}),

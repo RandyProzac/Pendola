@@ -3,6 +3,7 @@ import { normalizeCharacterRecord } from "@/lib/characters/archetypes";
 import type {
   AIChatMessage,
   AIConversation,
+  AISettings,
   Book,
   Chapter,
   ChapterSnapshot,
@@ -14,6 +15,7 @@ import type {
   ProjectBackup,
   Resource,
   Scenario,
+  WriterPreferences,
 } from "@/lib/types";
 
 const STALE_CONVERSATION_DAYS = 60;
@@ -37,6 +39,8 @@ export interface RemoteWorkspaceState {
   ideaNotes: IdeaNote[];
   entityMentions: EntityMention[];
   aiConversations: AIConversation[];
+  aiSettings?: AISettings;
+  writerPreferences?: WriterPreferences;
 }
 
 function getClient() {
@@ -405,6 +409,37 @@ function mapAIMessageRow(row: Record<string, unknown>): AIChatMessage {
   };
 }
 
+function mapUserSettingsRow(row: Record<string, unknown>) {
+  const aiSettingsRaw =
+    typeof row.ai_settings === "object" && row.ai_settings ? (row.ai_settings as Partial<AISettings>) : {};
+  const writerPreferencesRaw =
+    typeof row.writer_preferences === "object" && row.writer_preferences
+      ? (row.writer_preferences as Partial<WriterPreferences>)
+      : {};
+
+  return {
+    aiSettings: {
+      provider: aiSettingsRaw.provider ?? "ollama",
+      openaiKey: aiSettingsRaw.openaiKey || undefined,
+      anthropicKey: aiSettingsRaw.anthropicKey || undefined,
+      geminiKey: aiSettingsRaw.geminiKey || undefined,
+      ollamaBaseUrl: aiSettingsRaw.ollamaBaseUrl || undefined,
+      ollamaKey: aiSettingsRaw.ollamaKey || undefined,
+      ollamaModel: aiSettingsRaw.ollamaModel || undefined,
+      monthlyBudgetUsd:
+        typeof aiSettingsRaw.monthlyBudgetUsd === "number" ? aiSettingsRaw.monthlyBudgetUsd : undefined,
+      budgetCycleStartedAt: aiSettingsRaw.budgetCycleStartedAt || undefined,
+    } satisfies AISettings,
+    writerPreferences: {
+      editorFont: writerPreferencesRaw.editorFont ?? "editorial",
+      fontSize: typeof writerPreferencesRaw.fontSize === "number" ? writerPreferencesRaw.fontSize : 18,
+      lineHeight:
+        typeof writerPreferencesRaw.lineHeight === "number" ? writerPreferencesRaw.lineHeight : 1.8,
+      columnWidth: writerPreferencesRaw.columnWidth ?? "equilibrada",
+    } satisfies WriterPreferences,
+  };
+}
+
 function mapAIConversationRow(
   row: Record<string, unknown>,
   messages: AIChatMessage[]
@@ -654,6 +689,21 @@ function stripUsageFromAIMessageRows<T extends Record<string, unknown>>(rows: T[
   return rows.map(({ usage: _usage, ...row }) => row);
 }
 
+function toUserSettingsRow(
+  userId: string,
+  input: {
+    aiSettings: AISettings;
+    writerPreferences: WriterPreferences;
+  }
+) {
+  return {
+    user_id: userId,
+    ai_settings: input.aiSettings,
+    writer_preferences: input.writerPreferences,
+    updated_at: new Date().toISOString(),
+  };
+}
+
 export async function archiveStaleAIConversations(userId: string) {
   const client = getClient();
   const cutoff = new Date(
@@ -693,6 +743,7 @@ export async function fetchRemoteWorkspaceState(
     mentionsResult,
     conversationsResult,
     messagesResult,
+    userSettingsResult,
   ] = await Promise.all([
     client.from("projects").select("*").eq("user_id", userId).order("updated_at", { ascending: false }),
     client.from("books").select("*").eq("user_id", userId).order("order", { ascending: true }),
@@ -706,6 +757,7 @@ export async function fetchRemoteWorkspaceState(
     client.from("entity_mentions").select("*").eq("user_id", userId).order("created_at", { ascending: true }),
     client.from("ai_conversations").select("*").eq("user_id", userId).order("updated_at", { ascending: false }),
     client.from("ai_messages").select("*").eq("user_id", userId).order("created_at", { ascending: true }),
+    client.from("user_settings").select("*").eq("user_id", userId).maybeSingle(),
   ]);
 
   const projects = ensureNoError(
@@ -753,6 +805,7 @@ export async function fetchRemoteWorkspaceState(
     conversationsResult.data ?? []
   );
   const messageRows = ensureNoError(messagesResult.error, messagesResult.data ?? []);
+  const userSettingsRow = ensureNoError(userSettingsResult.error, userSettingsResult.data ?? null);
   const messagesByConversationId = new Map<string, AIChatMessage[]>();
 
   messageRows.forEach((row) => {
@@ -769,6 +822,8 @@ export async function fetchRemoteWorkspaceState(
     )
   );
 
+  const settings = userSettingsRow ? mapUserSettingsRow(userSettingsRow) : undefined;
+
   return {
     projects,
     books,
@@ -781,7 +836,24 @@ export async function fetchRemoteWorkspaceState(
     ideaNotes,
     entityMentions,
     aiConversations,
+    aiSettings: settings?.aiSettings,
+    writerPreferences: settings?.writerPreferences,
   };
+}
+
+export async function upsertUserSettingsRemote(
+  userId: string,
+  input: {
+    aiSettings: AISettings;
+    writerPreferences: WriterPreferences;
+  }
+) {
+  const client = getClient();
+  const { error } = await client.from("user_settings").upsert(toUserSettingsRow(userId, input));
+  const normalizedError = normalizeSupabaseError(error);
+  if (normalizedError) {
+    throw normalizedError;
+  }
 }
 
 export async function upsertProjectRemote(userId: string, project: Project) {

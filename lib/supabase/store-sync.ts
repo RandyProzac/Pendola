@@ -20,10 +20,12 @@ import {
   upsertProjectRemote,
   upsertResourceRemote,
   upsertScenarioRemote,
+  upsertUserSettingsRemote,
 } from "@/lib/supabase/project-repository";
 import { getCurrentSupabaseUserId, isRemoteSyncEnabled } from "@/lib/supabase/runtime";
 import type {
   AIConversation,
+  AISettings,
   Book,
   Chapter,
   ChapterSnapshot,
@@ -34,6 +36,7 @@ import type {
   Project,
   Resource,
   Scenario,
+  WriterPreferences,
 } from "@/lib/types";
 
 const scheduledTasks = new Map<string, ReturnType<typeof setTimeout>>();
@@ -256,4 +259,15 @@ export function syncAIConversationRemote(
 
 export function syncAIConversationDeletionRemote(conversationId: string) {
   runNow(() => deleteAIConversationRemote(conversationId));
+}
+
+export function syncUserSettingsRemote(input: {
+  aiSettings: AISettings;
+  writerPreferences: WriterPreferences;
+}, delay = 250) {
+  scheduleTask("user-settings", async () => {
+    const userId = getCurrentSupabaseUserId();
+    if (!userId) return;
+    await upsertUserSettingsRemote(userId, input);
+  }, delay);
 }
