@@ -2,8 +2,9 @@ import { createAnthropic } from "@ai-sdk/anthropic";
 import { createGoogleGenerativeAI } from "@ai-sdk/google";
 import { createOpenAI } from "@ai-sdk/openai";
 import { generateObject, generateText, streamText } from "ai";
-import type { ModelMessage } from "ai";
+import type { LanguageModelUsage, ModelMessage } from "ai";
 import type { AIProvider, AIRequestConfig, AIMode } from "@/lib/types";
+import { estimateUsageCostUsd } from "@/lib/ai/usage";
 import { z } from "zod";
 
 // Allow streaming responses up to 30 seconds
@@ -96,6 +97,95 @@ function resolveConfig(customConfig?: AIRequestConfig) {
 
 function requiresApiKey(provider: AIProvider) {
   return provider === "openai" || provider === "anthropic" || provider === "gemini";
+}
+
+function sumNumbers(...values: Array<number | undefined>) {
+  const present = values.filter((value): value is number => typeof value === "number");
+  if (present.length === 0) return undefined;
+  return present.reduce((total, value) => total + value, 0);
+}
+
+function mergeUsageSnapshots(...usages: Array<LanguageModelUsage | undefined>) {
+  const present = usages.filter((usage): usage is LanguageModelUsage => Boolean(usage));
+  if (present.length === 0) {
+    return undefined;
+  }
+
+  return present.reduce<LanguageModelUsage>(
+    (acc, usage) => ({
+      inputTokens: sumNumbers(acc.inputTokens, usage.inputTokens),
+      inputTokenDetails: {
+        noCacheTokens: sumNumbers(acc.inputTokenDetails.noCacheTokens, usage.inputTokenDetails.noCacheTokens),
+        cacheReadTokens: sumNumbers(acc.inputTokenDetails.cacheReadTokens, usage.inputTokenDetails.cacheReadTokens),
+        cacheWriteTokens: sumNumbers(acc.inputTokenDetails.cacheWriteTokens, usage.inputTokenDetails.cacheWriteTokens),
+      },
+      outputTokens: sumNumbers(acc.outputTokens, usage.outputTokens),
+      outputTokenDetails: {
+        textTokens: sumNumbers(acc.outputTokenDetails.textTokens, usage.outputTokenDetails.textTokens),
+        reasoningTokens: sumNumbers(acc.outputTokenDetails.reasoningTokens, usage.outputTokenDetails.reasoningTokens),
+      },
+      totalTokens: sumNumbers(acc.totalTokens, usage.totalTokens),
+      reasoningTokens: sumNumbers(acc.reasoningTokens, usage.reasoningTokens),
+      cachedInputTokens: sumNumbers(acc.cachedInputTokens, usage.cachedInputTokens),
+      raw: acc.raw ?? usage.raw,
+    }),
+    {
+      inputTokens: undefined,
+      inputTokenDetails: {
+        noCacheTokens: undefined,
+        cacheReadTokens: undefined,
+        cacheWriteTokens: undefined,
+      },
+      outputTokens: undefined,
+      outputTokenDetails: {
+        textTokens: undefined,
+        reasoningTokens: undefined,
+      },
+      totalTokens: undefined,
+      reasoningTokens: undefined,
+      cachedInputTokens: undefined,
+      raw: undefined,
+    }
+  );
+}
+
+function buildUsageSnapshot({
+  usage,
+  provider,
+  model,
+  source = "provider",
+}: {
+  usage?: LanguageModelUsage;
+  provider: AIProvider;
+  model: string;
+  source?: "provider" | "cache";
+}) {
+  if (!usage && source !== "cache") {
+    return undefined;
+  }
+
+  const inputTokens = usage?.inputTokens;
+  const outputTokens = usage?.outputTokens;
+
+  return {
+    inputTokens,
+    outputTokens,
+    totalTokens: usage?.totalTokens,
+    reasoningTokens: usage?.outputTokenDetails.reasoningTokens ?? usage?.reasoningTokens,
+    cachedInputTokens: usage?.inputTokenDetails.cacheReadTokens ?? usage?.cachedInputTokens,
+    estimatedCostUsd:
+      source === "cache"
+        ? 0
+        : estimateUsageCostUsd({
+            provider,
+            model,
+            inputTokens,
+            outputTokens,
+          }),
+    provider,
+    model,
+    source,
+  };
 }
 
 function createLanguageModel({
@@ -516,6 +606,7 @@ async function extendIncompletePlainTextResponse({
   maxOutputTokens: number;
 }) {
   let content = initialContent.trim();
+  let aggregatedUsage: LanguageModelUsage | undefined;
 
   for (let attempt = 0; attempt < 3; attempt += 1) {
     if (!content || !looksLikeIncompleteResponse(content)) {
@@ -548,10 +639,14 @@ Continua exactamente desde la ultima idea o frase incompleta de tu respuesta ant
       break;
     }
 
+    aggregatedUsage = mergeUsageSnapshots(aggregatedUsage, continuationResult.usage);
     content = mergeContinuation(content, nextChunk);
   }
 
-  return content;
+  return {
+    content,
+    usage: aggregatedUsage,
+  };
 }
 
 async function generateStructuredFromPlainText({
@@ -560,12 +655,16 @@ async function generateStructuredFromPlainText({
   messages,
   mode,
   modeSettings,
+  provider,
+  model,
 }: {
   languageModel: ReturnType<typeof createLanguageModel>;
   fullSystemPrompt: string;
   messages: ChatMessage[];
   mode?: AIMode;
   modeSettings: { temperature: number; maxOutputTokens: number };
+  provider: AIProvider;
+  model: string;
 }) {
   const plainTextSystemPrompt = buildPlainTextSystemPrompt(fullSystemPrompt);
 
@@ -578,12 +677,13 @@ async function generateStructuredFromPlainText({
   });
 
   let content = initialResult.text.trim();
+  let combinedUsage: LanguageModelUsage | undefined = initialResult.usage;
 
   if (
     content &&
     (initialResult.finishReason === "length" || looksLikeIncompleteResponse(content))
   ) {
-    content = await extendIncompletePlainTextResponse({
+    const extension = await extendIncompletePlainTextResponse({
       languageModel,
       plainTextSystemPrompt,
       messages,
@@ -591,13 +691,22 @@ async function generateStructuredFromPlainText({
       temperature: modeSettings.temperature,
       maxOutputTokens: modeSettings.maxOutputTokens,
     });
+    content = extension.content;
+    combinedUsage = mergeUsageSnapshots(initialResult.usage, extension.usage);
   }
 
-  return buildStructuredFallbackFromText({
-    mode,
-    messages,
-    content,
-  });
+  return {
+    ...buildStructuredFallbackFromText({
+      mode,
+      messages,
+      content,
+    }),
+    usage: buildUsageSnapshot({
+      usage: combinedUsage,
+      provider,
+      model,
+    }),
+  };
 }
 
 export async function POST(req: Request) {
@@ -682,6 +791,8 @@ export async function POST(req: Request) {
             messages,
             mode,
             modeSettings,
+            provider,
+            model,
           })
         );
       }
@@ -710,7 +821,7 @@ Debes responder con una clasificación estructurada de tu salida.
           maxOutputTokens: modeSettings.maxOutputTokens,
         });
 
-        const repairedContent = await extendIncompletePlainTextResponse({
+        const repairResult = await extendIncompletePlainTextResponse({
           languageModel,
           plainTextSystemPrompt: buildPlainTextSystemPrompt(fullSystemPrompt),
           messages,
@@ -718,19 +829,27 @@ Debes responder con una clasificación estructurada de tu salida.
           temperature: modeSettings.temperature,
           maxOutputTokens: modeSettings.maxOutputTokens,
         });
+        const mergedUsage = mergeUsageSnapshots(result.usage, repairResult.usage);
 
         return Response.json(
-          ensureStructuredContent({
-            mode,
-            response: normalizeStructuredResponse({
+          {
+            ...ensureStructuredContent({
               mode,
-              messages,
-              response: {
-                ...result.object,
-                content: repairedContent,
-              },
+              response: normalizeStructuredResponse({
+                mode,
+                messages,
+                response: {
+                  ...result.object,
+                  content: repairResult.content,
+                },
+              }),
             }),
-          })
+            usage: buildUsageSnapshot({
+              usage: mergedUsage,
+              provider,
+              model,
+            }),
+          }
         );
       } catch (structuredError) {
         console.warn("Structured generation failed, falling back to plain text.", structuredError);
@@ -741,6 +860,8 @@ Debes responder con una clasificación estructurada de tu salida.
             mode,
             messages,
             modeSettings,
+            provider,
+            model,
           })
         );
       }

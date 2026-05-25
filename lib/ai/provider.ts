@@ -21,6 +21,9 @@ export function buildAIRequestConfig(settings: AISettings): AIRequestConfig {
     default:
       return {
         provider: "ollama",
+        baseURL: settings.ollamaBaseUrl?.trim() || undefined,
+        apiKey: settings.ollamaKey?.trim() || undefined,
+        model: settings.ollamaModel?.trim() || undefined,
       };
   }
 }

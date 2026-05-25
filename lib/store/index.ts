@@ -1416,6 +1416,15 @@ export const useProjectStore = create<ProjectStore>()(
               mode,
               responseType: cachedResponse.responseType,
               insertable: cachedResponse.insertable,
+              usage: {
+                inputTokens: 0,
+                outputTokens: 0,
+                totalTokens: 0,
+                estimatedCostUsd: 0,
+                provider: customConfig?.provider,
+                model: customConfig?.model,
+                source: 'cache',
+              },
             }
 
             set((state) => {
@@ -1484,6 +1493,10 @@ export const useProjectStore = create<ProjectStore>()(
               safeContent === structuredResponse.content ? structuredResponse.type : 'qa',
             insertable:
               safeContent === structuredResponse.content ? structuredResponse.insertable : false,
+            usage:
+              structuredResponse.usage && typeof structuredResponse.usage === 'object'
+                ? structuredResponse.usage
+                : undefined,
           }
 
           set((state) => {

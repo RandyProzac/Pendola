@@ -22,9 +22,16 @@ import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Input } from "@/components/ui/input";
+import { Progress } from "@/components/ui/progress";
 import { generateConversationTitle } from "@/lib/ai/conversations";
 import { detectPreferredLanguageFromText } from "@/lib/ai/language";
 import { AI_MODE_CONFIG } from "@/lib/ai/modes";
+import {
+  formatTokenCount,
+  formatUsd,
+  sumConversationUsages,
+  sumUsageSnapshots,
+} from "@/lib/ai/usage";
 import { useProjectStore } from "@/lib/store";
 import type {
   AIMode,
@@ -143,6 +150,10 @@ function shouldShowContinueGenerating(
   );
 }
 
+function clampProgress(value: number) {
+  return Math.max(0, Math.min(100, value));
+}
+
 interface AIPanelProps {
   visible: boolean;
   projectId: string;
@@ -199,6 +210,7 @@ export function AIPanel({
 }: AIPanelProps) {
   const {
     aiConversations,
+    aiSettings,
     createAIConversation,
     updateAIConversation,
     deleteAIConversation,
@@ -279,6 +291,38 @@ export function AIPanel({
   const messages = activeConversation?.messages ?? [];
   const mode = fixedMode ?? activeConversation?.mode ?? "copiloto";
   const isLoading = activeConversation?.isGenerating ?? false;
+  const conversationUsage = useMemo(
+    () =>
+      sumUsageSnapshots(
+        messages
+          .filter((message) => message.role === "assistant")
+          .map((message) => message.usage)
+      ),
+    [messages]
+  );
+  const globalUsage = useMemo(
+    () =>
+      sumConversationUsages(aiConversations, {
+        since: aiSettings.budgetCycleStartedAt,
+      }),
+    [aiConversations, aiSettings.budgetCycleStartedAt]
+  );
+  const budgetUsd =
+    typeof aiSettings.monthlyBudgetUsd === "number" && aiSettings.monthlyBudgetUsd > 0
+      ? aiSettings.monthlyBudgetUsd
+      : undefined;
+  const budgetProgress =
+    budgetUsd && typeof globalUsage?.estimatedCostUsd === "number"
+      ? clampProgress((globalUsage.estimatedCostUsd / budgetUsd) * 100)
+      : undefined;
+  const budgetState =
+    typeof budgetProgress !== "number"
+      ? "idle"
+      : budgetProgress >= 100
+      ? "exceeded"
+      : budgetProgress >= 80
+      ? "warning"
+      : "ok";
   const ensureConversationTitle = useCallback(
     (
       conversation: AIConversation,
@@ -607,6 +651,7 @@ Reglas:
             )}
           </div>
         )}
+
       </div>
 
       {/* Messages */}
@@ -660,7 +705,7 @@ Reglas:
                 {msg.content}
               </p>
               {msg.role === "assistant" && msg.responseType && (
-                <div className="mt-3">
+                <div className="mt-3 flex flex-wrap items-center gap-2">
                   <span
                     className={cn(
                       "inline-flex rounded-full border px-2 py-1 text-[10px] font-medium",
@@ -669,6 +714,14 @@ Reglas:
                   >
                     {responseTypeMeta[msg.responseType].label}
                   </span>
+                  {msg.usage ? (
+                    <span className="inline-flex rounded-full border border-border/70 bg-background/60 px-2 py-1 text-[10px] text-muted-foreground">
+                      {msg.usage.source === "cache" ? "Cache" : `${formatTokenCount(msg.usage.totalTokens)} tok`}
+                      {typeof msg.usage.estimatedCostUsd === "number"
+                        ? ` · ${formatUsd(msg.usage.estimatedCostUsd)}`
+                        : ""}
+                    </span>
+                  ) : null}
                 </div>
               )}
               {(shouldShowInsertionActions(msg) ||
@@ -799,6 +852,37 @@ Reglas:
 
       {/* Input */}
       <div className="shrink-0 border-t bg-background/82 p-3">
+        {typeof budgetProgress === "number" ? (
+          <div
+            className={cn(
+              "mb-3 rounded-2xl border bg-card/70 px-3 py-2.5",
+              budgetState === "warning" && "border-amber-300 bg-amber-50/70 dark:bg-amber-500/10",
+              budgetState === "exceeded" && "border-rose-300 bg-rose-50/70 dark:bg-rose-500/10"
+            )}
+          >
+            <div className="mb-1.5 flex items-center justify-between gap-2 text-[11px] text-muted-foreground">
+              <span>Consumo de IA</span>
+              <span>
+                {formatUsd(globalUsage?.estimatedCostUsd)} / {formatUsd(budgetUsd)}
+              </span>
+            </div>
+            <Progress
+              value={budgetProgress}
+              className="gap-0"
+              aria-label="Consumo de IA"
+            />
+            {budgetState === "warning" ? (
+              <p className="mt-2 text-[11px] text-amber-700 dark:text-amber-300">
+                Vas por encima del 80% de tu presupuesto de referencia.
+              </p>
+            ) : null}
+            {budgetState === "exceeded" ? (
+              <p className="mt-2 text-[11px] text-rose-700 dark:text-rose-300">
+                Ya superaste tu presupuesto de referencia. Puedes reiniciar el medidor desde Ajustes / Perfil.
+              </p>
+            ) : null}
+          </div>
+        ) : null}
         <div className="flex gap-2">
           <Textarea
             placeholder={resolvedInputPlaceholder}

@@ -326,6 +326,11 @@ export interface AISettings {
   openaiKey?: string
   anthropicKey?: string
   geminiKey?: string
+  ollamaBaseUrl?: string
+  ollamaKey?: string
+  ollamaModel?: string
+  monthlyBudgetUsd?: number
+  budgetCycleStartedAt?: string
 }
 
 export type WriterFontOption = 'editorial' | 'clasica' | 'moderna' | 'sans'
@@ -345,6 +350,18 @@ export interface AIRequestConfig {
   model?: string
 }
 
+export interface AIUsageSnapshot {
+  inputTokens?: number
+  outputTokens?: number
+  totalTokens?: number
+  reasoningTokens?: number
+  cachedInputTokens?: number
+  estimatedCostUsd?: number
+  provider?: AIProvider
+  model?: string
+  source?: 'provider' | 'cache'
+}
+
 export interface AIChatMessage {
   id: string
   role: 'user' | 'assistant'
@@ -353,6 +370,7 @@ export interface AIChatMessage {
   mode?: AIMode
   responseType?: 'narrative_text' | 'rewrite' | 'ideas_list' | 'analysis' | 'qa'
   insertable?: boolean
+  usage?: AIUsageSnapshot
 }
 
 export interface AIConversation {

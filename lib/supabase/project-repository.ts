@@ -55,6 +55,13 @@ function isMissingTableErrorMessage(message: string) {
   );
 }
 
+function isMissingAIMessageUsageColumnErrorMessage(message: string) {
+  return (
+    message.includes("Could not find the 'usage' column of 'ai_messages'") ||
+    (message.includes("schema cache") && message.includes("usage") && message.includes("ai_messages"))
+  );
+}
+
 function normalizeSupabaseError(error: { message: string } | null) {
   if (!error) return null;
 
@@ -391,6 +398,10 @@ function mapAIMessageRow(row: Record<string, unknown>): AIChatMessage {
         : undefined,
     insertable:
       typeof row.insertable === "boolean" ? row.insertable : undefined,
+    usage:
+      row.usage && typeof row.usage === "object"
+        ? (row.usage as AIChatMessage["usage"])
+        : undefined,
   };
 }
 
@@ -634,8 +645,13 @@ function toAIMessageRows(userId: string, conversation: AIConversation) {
     response_type: message.responseType ?? null,
     insertable:
       typeof message.insertable === "boolean" ? message.insertable : null,
+    usage: message.usage ?? null,
     created_at: message.timestamp,
   }));
+}
+
+function stripUsageFromAIMessageRows<T extends Record<string, unknown>>(rows: T[]) {
+  return rows.map(({ usage: _usage, ...row }) => row);
 }
 
 export async function archiveStaleAIConversations(userId: string) {
@@ -956,9 +972,17 @@ export async function upsertAIConversationRemote(
 
   if (conversation.messages.length === 0) return;
 
-  const { error: messageError } = await client
+  const messageRows = toAIMessageRows(userId, conversation);
+  let { error: messageError } = await client
     .from("ai_messages")
-    .insert(toAIMessageRows(userId, conversation));
+    .insert(messageRows);
+
+  if (messageError && isMissingAIMessageUsageColumnErrorMessage(messageError.message)) {
+    const fallbackResult = await client
+      .from("ai_messages")
+      .insert(stripUsageFromAIMessageRows(messageRows));
+    messageError = fallbackResult.error;
+  }
 
   if (messageError) {
     throw new Error(messageError.message);
@@ -1061,7 +1085,13 @@ export async function upsertProjectBackupRemote(
       throw new Error(deleteMessagesError.message);
     }
 
-    const { error: messageError } = await client.from("ai_messages").insert(messages);
+    let { error: messageError } = await client.from("ai_messages").insert(messages);
+    if (messageError && isMissingAIMessageUsageColumnErrorMessage(messageError.message)) {
+      const fallbackResult = await client
+        .from("ai_messages")
+        .insert(stripUsageFromAIMessageRows(messages));
+      messageError = fallbackResult.error;
+    }
     if (messageError) {
       throw new Error(messageError.message);
     }
