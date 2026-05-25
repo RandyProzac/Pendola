@@ -350,6 +350,14 @@ export interface AIRequestConfig {
   model?: string
 }
 
+export interface AIVisualResourcePayload {
+  id: string
+  name: string
+  description?: string
+  imageUrl: string
+  mediaType?: string
+}
+
 export interface AIUsageSnapshot {
   inputTokens?: number
   outputTokens?: number

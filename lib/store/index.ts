@@ -56,6 +56,7 @@ import type {
   EntityMention,
   EntityMentionType,
   AIRequestConfig,
+  AIVisualResourcePayload,
   EditorialDraft,
   AIConversationWorkspace,
   ProjectBackup,
@@ -207,6 +208,7 @@ interface ProjectStore {
     customConfig?: AIRequestConfig
     preferredLanguage?: string
     systemPrompt?: string
+    visualResources?: AIVisualResourcePayload[]
   }) => Promise<void>
   getAIConversationsByProject: (
     projectId: string,
@@ -1365,6 +1367,7 @@ export const useProjectStore = create<ProjectStore>()(
         customConfig,
         preferredLanguage,
         systemPrompt,
+        visualResources,
       }) => {
         const conversation = get().aiConversations.find((chat) => chat.id === conversationId)
         if (!conversation || conversation.isGenerating) return
@@ -1475,6 +1478,7 @@ export const useProjectStore = create<ProjectStore>()(
               contextText,
               customConfig,
               preferredLanguage,
+              visualResources,
               messages: requestMessages.map((message) => ({
                 role: message.role,
                 content: message.content,

@@ -3,7 +3,7 @@ import { createGoogleGenerativeAI } from "@ai-sdk/google";
 import { createOpenAI } from "@ai-sdk/openai";
 import { generateObject, generateText, streamText } from "ai";
 import type { LanguageModelUsage, ModelMessage } from "ai";
-import type { AIProvider, AIRequestConfig, AIMode } from "@/lib/types";
+import type { AIProvider, AIRequestConfig, AIMode, AIVisualResourcePayload } from "@/lib/types";
 import { estimateUsageCostUsd } from "@/lib/ai/usage";
 import { z } from "zod";
 
@@ -14,6 +14,8 @@ type ChatMessage = {
   role: "user" | "assistant" | "system";
   content: string;
 };
+
+type VisualResource = AIVisualResourcePayload;
 
 function sanitizeMessages(input: unknown): ChatMessage[] {
   if (!Array.isArray(input)) return [];
@@ -30,6 +32,118 @@ function sanitizeMessages(input: unknown): ChatMessage[] {
     }
 
     return [{ role, content }];
+  });
+}
+
+function sanitizeVisualResources(input: unknown): VisualResource[] {
+  if (!Array.isArray(input)) return [];
+
+  return input.flatMap((resource) => {
+    if (!resource || typeof resource !== "object") return [];
+
+    const { id, name, description, imageUrl, mediaType } = resource as {
+      id?: unknown;
+      name?: unknown;
+      description?: unknown;
+      imageUrl?: unknown;
+      mediaType?: unknown;
+    };
+
+    if (
+      typeof id !== "string" ||
+      typeof name !== "string" ||
+      typeof imageUrl !== "string" ||
+      !imageUrl.trim()
+    ) {
+      return [];
+    }
+
+    return [
+      {
+        id,
+        name: name.trim(),
+        description: typeof description === "string" ? description.trim() : undefined,
+        imageUrl: imageUrl.trim(),
+        mediaType: typeof mediaType === "string" ? mediaType.trim() : undefined,
+      },
+    ];
+  });
+}
+
+function buildVisualAttachmentContext(resources: VisualResource[]) {
+  if (resources.length === 0) return "";
+
+  return `Referencias visuales adjuntas del proyecto:\n${resources
+    .map((resource, index) =>
+      `${index + 1}. ${resource.name}${resource.description ? ` — ${resource.description}` : ""}`
+    )
+    .join("\n")}`;
+}
+
+function toImageData(resource: VisualResource) {
+  try {
+    if (resource.imageUrl.startsWith("data:")) {
+      return resource.imageUrl;
+    }
+
+    return new URL(resource.imageUrl);
+  } catch {
+    return null;
+  }
+}
+
+function buildModelMessages({
+  messages,
+  visualResources,
+}: {
+  messages: ChatMessage[];
+  visualResources: VisualResource[];
+}) {
+  if (visualResources.length === 0) {
+    return messages as ModelMessage[];
+  }
+
+  const lastUserIndex = [...messages]
+    .map((message, index) => ({ message, index }))
+    .reverse()
+    .find(({ message }) => message.role === "user")?.index;
+
+  if (typeof lastUserIndex !== "number") {
+    return messages as ModelMessage[];
+  }
+
+  const attachmentContext = buildVisualAttachmentContext(visualResources);
+
+  return messages.map((message, index) => {
+    if (index !== lastUserIndex || message.role !== "user") {
+      return message as ModelMessage;
+    }
+
+    const content: Array<
+      { type: "text"; text: string } | { type: "image"; image: string | URL; mediaType?: string }
+    > = [];
+
+    if (attachmentContext) {
+      content.push({ type: "text", text: attachmentContext });
+    }
+
+    content.push({ type: "text", text: message.content });
+
+    visualResources.forEach((resource) => {
+      const image = toImageData(resource);
+      if (!image) return;
+
+      content.push({
+        type: "image",
+        image,
+        mediaType: resource.mediaType,
+      });
+    });
+
+    return {
+      role: "user",
+      content,
+    } as ModelMessage;
   });
 }
 
@@ -593,14 +707,14 @@ function mergeContinuation(base: string, continuation: string) {
 async function extendIncompletePlainTextResponse({
   languageModel,
   plainTextSystemPrompt,
-  messages,
+  modelMessages,
   initialContent,
   temperature,
   maxOutputTokens,
 }: {
   languageModel: ReturnType<typeof createLanguageModel>;
   plainTextSystemPrompt: string;
-  messages: ChatMessage[];
+  modelMessages: ModelMessage[];
   initialContent: string;
   temperature: number;
   maxOutputTokens: number;
@@ -624,12 +738,12 @@ Continua exactamente desde la ultima idea o frase incompleta de tu respuesta ant
 - Empieza directamente por la continuacion.
 - Si estabas desarrollando una opcion o un apartado, terminalo antes de pasar al siguiente.`,
       messages: [
-        ...messages,
+        ...modelMessages,
         {
           role: "assistant",
           content,
         },
-      ] as ModelMessage[],
+      ],
       temperature,
       maxOutputTokens: Math.min(maxOutputTokens, 900),
     });
@@ -653,6 +767,7 @@ async function generateStructuredFromPlainText({
   languageModel,
   fullSystemPrompt,
   messages,
+  modelMessages,
   mode,
   modeSettings,
   provider,
@@ -661,6 +776,7 @@ async function generateStructuredFromPlainText({
   languageModel: ReturnType<typeof createLanguageModel>;
   fullSystemPrompt: string;
   messages: ChatMessage[];
+  modelMessages: ModelMessage[];
   mode?: AIMode;
   modeSettings: { temperature: number; maxOutputTokens: number };
   provider: AIProvider;
@@ -671,7 +787,7 @@ async function generateStructuredFromPlainText({
   const initialResult = await generateText({
     model: languageModel,
     system: plainTextSystemPrompt,
-    messages: messages as ModelMessage[],
+    messages: modelMessages,
     temperature: modeSettings.temperature,
     maxOutputTokens: modeSettings.maxOutputTokens,
   });
@@ -686,7 +802,7 @@ async function generateStructuredFromPlainText({
     const extension = await extendIncompletePlainTextResponse({
       languageModel,
       plainTextSystemPrompt,
-      messages,
+      modelMessages,
       initialContent: content,
       temperature: modeSettings.temperature,
       maxOutputTokens: modeSettings.maxOutputTokens,
@@ -719,8 +835,10 @@ export async function POST(req: Request) {
       contextText,
       structured,
       preferredLanguage,
+      visualResources: rawVisualResources,
     } = await req.json();
     const messages = sanitizeMessages(rawMessages);
+    const visualResources = sanitizeVisualResources(rawVisualResources).slice(0, 3);
 
     const { provider, apiKey, baseURL, model } = resolveConfig(customConfig);
 
@@ -781,6 +899,10 @@ export async function POST(req: Request) {
       baseURL,
       model,
     });
+    const modelMessages = buildModelMessages({
+      messages,
+      visualResources: provider !== "ollama" ? visualResources : [],
+    });
 
     if (structured) {
       if (provider === "ollama") {
@@ -789,6 +911,7 @@ export async function POST(req: Request) {
             languageModel,
             fullSystemPrompt,
             messages,
+            modelMessages,
             mode,
             modeSettings,
             provider,
@@ -811,7 +934,7 @@ Debes responder con una clasificación estructurada de tu salida.
 - "insertable" solo puede ser true si el contenido está listo para integrarse directamente al manuscrito o a la versión editorial.
 - Nunca marques como insertable respuestas meta sobre la IA, el modelo, el proveedor o el funcionamiento de la herramienta.
 - Si la solicitud no pide texto narrativo para incluir, responde con insertable=false.`,
-          messages: messages as ModelMessage[],
+          messages: modelMessages,
           schema: z.object({
             type: z.enum(["narrative_text", "rewrite", "ideas_list", "analysis", "qa"]),
             insertable: z.boolean(),
@@ -824,7 +947,7 @@ Debes responder con una clasificación estructurada de tu salida.
         const repairResult = await extendIncompletePlainTextResponse({
           languageModel,
           plainTextSystemPrompt: buildPlainTextSystemPrompt(fullSystemPrompt),
-          messages,
+          modelMessages,
           initialContent: result.object.content,
           temperature: modeSettings.temperature,
           maxOutputTokens: modeSettings.maxOutputTokens,
@@ -859,6 +982,7 @@ Debes responder con una clasificación estructurada de tu salida.
             fullSystemPrompt,
             mode,
             messages,
+            modelMessages,
             modeSettings,
             provider,
             model,
@@ -870,7 +994,7 @@ Debes responder con una clasificación estructurada de tu salida.
     const result = streamText({
       model: languageModel,
       system: fullSystemPrompt,
-      messages: messages as ModelMessage[],
+      messages: modelMessages,
       temperature: modeSettings.temperature,
       maxOutputTokens: modeSettings.maxOutputTokens,
     });

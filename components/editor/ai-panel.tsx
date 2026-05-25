@@ -1,12 +1,22 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  type ChangeEvent,
+  type ClipboardEvent,
+  type DragEvent,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 
 import {
   Sparkles,
   Send,
   Copy,
   Check,
+  Plus,
   ArrowDownToLine,
   BetweenHorizonalStart,
   Replace,
@@ -26,12 +36,14 @@ import { Progress } from "@/components/ui/progress";
 import { generateConversationTitle } from "@/lib/ai/conversations";
 import { detectPreferredLanguageFromText } from "@/lib/ai/language";
 import { AI_MODE_CONFIG } from "@/lib/ai/modes";
+import { prepareResourcePayload } from "@/lib/resources/extract";
 import {
   formatTokenCount,
   formatUsd,
   sumConversationUsages,
   sumUsageSnapshots,
 } from "@/lib/ai/usage";
+import { getPublicMediaUrl } from "@/lib/supabase/storage";
 import { useProjectStore } from "@/lib/store";
 import type {
   AIMode,
@@ -39,8 +51,11 @@ import type {
   AIChatMessage,
   AIConversation,
   AIConversationWorkspace,
+  AIVisualResourcePayload,
+  ResourceFileType,
 } from "@/lib/types";
 import { cn } from "@/lib/utils";
+import { toast } from "sonner";
 
 const RESPONSE_TYPE_META: Record<
   NonNullable<AIChatMessage["responseType"]>,
@@ -154,6 +169,65 @@ function clampProgress(value: number) {
   return Math.max(0, Math.min(100, value));
 }
 
+function getAttachmentFileType(name: string): ResourceFileType {
+  const ext = name.split(".").pop()?.toLowerCase() || "";
+  if (ext === "pdf") return "pdf";
+  if (["jpg", "jpeg", "png", "gif", "webp", "svg"].includes(ext)) return "image";
+  if (["txt", "md", "rtf"].includes(ext)) return "text";
+  return "other";
+}
+
+function inferMediaTypeFromUrl(imageUrl: string) {
+  const lower = imageUrl.toLowerCase();
+
+  if (lower.startsWith("data:image/png")) return "image/png";
+  if (lower.startsWith("data:image/webp")) return "image/webp";
+  if (lower.startsWith("data:image/gif")) return "image/gif";
+  if (lower.startsWith("data:image/jpeg") || lower.startsWith("data:image/jpg")) {
+    return "image/jpeg";
+  }
+  if (lower.endsWith(".png")) return "image/png";
+  if (lower.endsWith(".webp")) return "image/webp";
+  if (lower.endsWith(".gif")) return "image/gif";
+  return "image/jpeg";
+}
+
+function shouldAttachProjectImages(messageContent: string) {
+  const normalized = messageContent.toLowerCase();
+
+  return [
+    "imagen",
+    "imagenes",
+    "image",
+    "foto",
+    "fotos",
+    "captura",
+    "capturas",
+    "portada",
+    "visual",
+    "visuales",
+    "referencia",
+    "referencias",
+    "recurso",
+    "recursos",
+    "adjunta",
+    "adjuntas",
+    "adjunto",
+    "adjuntos",
+    "ilustracion",
+    "ilustración",
+  ].some((signal) => normalized.includes(signal));
+}
+
+interface ComposerAttachment {
+  id: string;
+  name: string;
+  fileType: ResourceFileType;
+  extractedContent?: string;
+  imageUrl?: string;
+  mediaType?: string;
+}
+
 interface AIPanelProps {
   visible: boolean;
   projectId: string;
@@ -215,6 +289,7 @@ export function AIPanel({
     updateAIConversation,
     deleteAIConversation,
     requestAIResponse,
+    getResourcesByProject,
   } = useProjectStore();
   const [prompt, setPrompt] = useState("");
   const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null);
@@ -222,8 +297,12 @@ export function AIPanel({
   const [editingTitle, setEditingTitle] = useState(false);
   const [draftTitle, setDraftTitle] = useState("");
   const [showArchived, setShowArchived] = useState(false);
+  const [composerAttachments, setComposerAttachments] = useState<ComposerAttachment[]>([]);
+  const [isPreparingAttachments, setIsPreparingAttachments] = useState(false);
+  const [isDragOverComposer, setIsDragOverComposer] = useState(false);
   const initialPromptSent = useRef(false);
   const lastExternalPromptId = useRef<string | null>(null);
+  const attachmentInputRef = useRef<HTMLInputElement>(null);
   const modeCopy = fixedMode ? AI_MODE_CONFIG[fixedMode] : null;
   const resolvedPanelTitle =
     panelTitle || (workspace === "editorial" ? "IA editorial" : "IA");
@@ -258,6 +337,151 @@ export function AIPanel({
       },
     };
   }, [workspace]);
+  const projectVisualResources = useMemo<AIVisualResourcePayload[]>(() => {
+    const visualResources: AIVisualResourcePayload[] = [];
+
+    getResourcesByProject(projectId)
+      .filter((resource) => resource.fileType === "image")
+      .forEach((resource) => {
+        const imageUrl = resource.fileData || getPublicMediaUrl(resource.mediaPath) || "";
+        if (!imageUrl) {
+          return;
+        }
+
+        visualResources.push({
+          id: resource.id,
+          name: resource.name,
+          description: resource.description || undefined,
+          imageUrl,
+          mediaType: inferMediaTypeFromUrl(imageUrl),
+        });
+      });
+
+    return visualResources.slice(0, 3);
+  }, [getResourcesByProject, projectId]);
+
+  const attachmentVisualResources = useMemo<AIVisualResourcePayload[]>(() => {
+    return composerAttachments
+      .filter((attachment) => attachment.fileType === "image" && attachment.imageUrl)
+      .map((attachment) => ({
+        id: attachment.id,
+        name: attachment.name,
+        imageUrl: attachment.imageUrl as string,
+        mediaType: attachment.mediaType,
+      }));
+  }, [composerAttachments]);
+
+  const attachmentTextContext = useMemo(() => {
+    const readableAttachments = composerAttachments.filter((attachment) => attachment.extractedContent?.trim());
+    if (readableAttachments.length === 0) return "";
+
+    return `ARCHIVOS ADJUNTOS EN ESTE MENSAJE\n${readableAttachments
+      .map(
+        (attachment) =>
+          `Archivo: ${attachment.name}\n${attachment.extractedContent?.trim()}`
+      )
+      .join("\n\n")}`;
+  }, [composerAttachments]);
+
+  const processComposerFiles = useCallback(async (files: File[]) => {
+    if (files.length === 0) return;
+    setIsPreparingAttachments(true);
+    const nextAttachments: ComposerAttachment[] = [];
+
+    for (const file of files) {
+      const fileType = getAttachmentFileType(file.name);
+
+      if (fileType === "other") {
+        toast.error(`"${file.name}" no es compatible todavía.`, {
+          description: "Por ahora puedes adjuntar PDF, TXT, MD, RTF, JPG o PNG.",
+        });
+        continue;
+      }
+
+      try {
+        const payload = await prepareResourcePayload(file, fileType);
+        const imageUrl =
+          fileType === "image"
+            ? payload.fileData
+            : undefined;
+
+        nextAttachments.push({
+          id: `${file.name}-${file.size}-${file.lastModified}`,
+          name: file.name,
+          fileType,
+          extractedContent: payload.extractedContent,
+          imageUrl,
+          mediaType: imageUrl ? inferMediaTypeFromUrl(imageUrl) : undefined,
+        });
+      } catch (error) {
+        const message =
+          error instanceof Error ? error.message : "No se pudo preparar el archivo.";
+
+        toast.error(`No se pudo adjuntar "${file.name}"`, {
+          description: message,
+        });
+      }
+    }
+
+    setComposerAttachments((current) => {
+      const merged = [...current];
+
+      nextAttachments.forEach((attachment) => {
+        if (!merged.some((item) => item.id === attachment.id)) {
+          merged.push(attachment);
+        }
+      });
+
+      return merged.slice(0, 6);
+    });
+
+    setIsPreparingAttachments(false);
+  }, []);
+
+  const handleAttachmentUpload = useCallback(async (event: ChangeEvent<HTMLInputElement>) => {
+    const files = event.target.files;
+    if (!files?.length) return;
+
+    await processComposerFiles(Array.from(files));
+    event.target.value = "";
+  }, [processComposerFiles]);
+
+  const handleComposerPaste = useCallback(async (event: ClipboardEvent<HTMLTextAreaElement>) => {
+    const files = Array.from(event.clipboardData.files || []);
+    if (files.length === 0) return;
+
+    event.preventDefault();
+    await processComposerFiles(files);
+  }, [processComposerFiles]);
+
+  const handleComposerDrop = useCallback(async (event: DragEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    setIsDragOverComposer(false);
+
+    const files = Array.from(event.dataTransfer.files || []);
+    if (files.length === 0) return;
+
+    await processComposerFiles(files);
+  }, [processComposerFiles]);
+
+  const handleComposerDragOver = useCallback((event: DragEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    if (event.dataTransfer.types.includes("Files")) {
+      setIsDragOverComposer(true);
+    }
+  }, []);
+
+  const handleComposerDragLeave = useCallback((event: DragEvent<HTMLDivElement>) => {
+    if (event.currentTarget.contains(event.relatedTarget as Node | null)) {
+      return;
+    }
+
+    setIsDragOverComposer(false);
+  }, []);
+
+  const removeComposerAttachment = useCallback((id: string) => {
+    setComposerAttachments((current) => current.filter((attachment) => attachment.id !== id));
+  }, []);
 
   const allConversations = useMemo(
     () =>
@@ -342,7 +566,11 @@ export function AIPanel({
   );
 
   const handleSend = useCallback(async (messageOverride?: string, modeOverride?: AIMode) => {
-    const messageContent = (messageOverride ?? prompt).trim();
+    const messageContent =
+      (messageOverride ?? prompt).trim() ||
+      (composerAttachments.length > 0
+        ? "Analiza los archivos adjuntos y ayúdame con lo más relevante para este proyecto."
+        : "");
     if (!messageContent) return;
 
     let targetConversation = activeConversation;
@@ -363,7 +591,17 @@ export function AIPanel({
     const resolvedMode = modeOverride || fixedMode || inferAIModeFromPrompt(messageContent);
     const resolvedModeConfig = AI_MODE_CONFIG[resolvedMode];
     const preferredLanguage = detectPreferredLanguageFromText(messageContent);
-    const resolvedContextText = contextBuilder?.(messageContent) ?? contextText;
+    const baseContextText = contextBuilder?.(messageContent) ?? contextText;
+    const resolvedContextText = attachmentTextContext
+      ? [baseContextText, attachmentTextContext].filter(Boolean).join("\n\n")
+      : baseContextText;
+    const shouldAttachImages =
+      (customConfig?.provider || aiSettings.provider) !== "ollama" &&
+      (projectVisualResources.length > 0 || attachmentVisualResources.length > 0) &&
+      (shouldAttachProjectImages(messageContent) || attachmentVisualResources.length > 0);
+    const visualResources = shouldAttachImages
+      ? [...attachmentVisualResources, ...projectVisualResources].slice(0, 4)
+      : undefined;
 
     updateAIConversation(targetConversation.id, { mode: resolvedMode });
     ensureConversationTitle(targetConversation, messageContent, resolvedMode);
@@ -381,8 +619,10 @@ export function AIPanel({
       customConfig,
       preferredLanguage,
       systemPrompt: systemPromptOverride || resolvedModeConfig.buildSystemPrompt(preferredLanguage),
+      visualResources,
     });
-  }, [activeConversation, chapterId, chapterTitle, contextBuilder, contextText, createAIConversation, customConfig, ensureConversationTitle, fixedMode, projectId, projectTitle, prompt, requestAIResponse, systemPromptOverride, updateAIConversation, workspace]);
+    setComposerAttachments([]);
+  }, [activeConversation, aiSettings.provider, attachmentTextContext, attachmentVisualResources, chapterId, chapterTitle, contextBuilder, contextText, createAIConversation, customConfig, ensureConversationTitle, fixedMode, projectId, projectTitle, projectVisualResources, prompt, requestAIResponse, systemPromptOverride, updateAIConversation, workspace]);
 
   useEffect(() => {
     if (!visible || !initialPrompt || initialPromptSent.current) return;
@@ -883,31 +1123,99 @@ Reglas:
             ) : null}
           </div>
         ) : null}
-        <div className="flex gap-2">
-          <Textarea
-            placeholder={resolvedInputPlaceholder}
-            value={prompt}
-            onChange={(e) => setPrompt(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" && !e.shiftKey) {
-                e.preventDefault();
-                handleSend();
-              }
-            }}
-            rows={2}
-            className="min-h-24 flex-1 resize-none rounded-2xl bg-card/75 text-sm"
-          />
+        <input
+          ref={attachmentInputRef}
+          type="file"
+          multiple
+          accept=".pdf,.txt,.md,.rtf,.jpg,.jpeg,.png,.webp,.gif"
+          className="hidden"
+          onChange={(event) => {
+            void handleAttachmentUpload(event);
+          }}
+        />
+        {composerAttachments.length > 0 ? (
+          <div className="mb-3 flex flex-wrap gap-2">
+            {composerAttachments.map((attachment) => (
+              <div
+                key={attachment.id}
+                className="inline-flex items-center gap-2 rounded-full border bg-card/80 px-3 py-1.5 text-[11px] text-muted-foreground"
+              >
+                <span className="max-w-[180px] truncate">{attachment.name}</span>
+                <button
+                  type="button"
+                  onClick={() => removeComposerAttachment(attachment.id)}
+                  className="inline-flex h-4 w-4 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                  aria-label={`Quitar ${attachment.name}`}
+                >
+                  <X className="h-3 w-3" />
+                </button>
+              </div>
+            ))}
+          </div>
+        ) : null}
+        <div
+          className={cn(
+            "rounded-3xl transition-colors",
+            isDragOverComposer && "bg-violet-500/8 ring-2 ring-violet-400/40 ring-offset-2 ring-offset-background"
+          )}
+          onDrop={(event) => {
+            void handleComposerDrop(event);
+          }}
+          onDragOver={handleComposerDragOver}
+          onDragLeave={handleComposerDragLeave}
+        >
+          <div className="rounded-[1.75rem] border bg-card/75 px-4 pt-3 pb-3">
+            <Textarea
+              placeholder={resolvedInputPlaceholder}
+              value={prompt}
+              onChange={(e) => setPrompt(e.target.value)}
+              onPaste={(event) => {
+                void handleComposerPaste(event);
+              }}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && !e.shiftKey) {
+                  e.preventDefault();
+                  handleSend();
+                }
+              }}
+              rows={2}
+              className="min-h-20 w-full resize-none border-none bg-transparent px-0 pt-0 pb-2 text-sm shadow-none focus-visible:border-none focus-visible:ring-0"
+            />
+            <div className="flex items-center gap-2">
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                className="h-8 w-8 rounded-full text-muted-foreground hover:bg-background/70 hover:text-foreground"
+                onClick={() => attachmentInputRef.current?.click()}
+                disabled={isPreparingAttachments || isLoading}
+                aria-label="Adjuntar archivos"
+                title="Adjuntar archivos"
+              >
+                <Plus className="h-4 w-4" />
+              </Button>
+            </div>
+          </div>
         </div>
         <div className="mt-3 flex items-center justify-between">
-          <Badge variant="outline" className="text-xs">
-            {fixedMode ? resolvedPanelTitle : "Auto"}
-          </Badge>
+          <div className="flex items-center gap-2">
+            <Badge variant="outline" className="text-xs">
+              {fixedMode ? resolvedPanelTitle : "Auto"}
+            </Badge>
+            {isPreparingAttachments ? (
+              <span className="text-[11px] text-muted-foreground">Preparando adjuntos...</span>
+            ) : composerAttachments.length > 0 ? (
+              <span className="text-[11px] text-muted-foreground">
+                {composerAttachments.length} adjunto{composerAttachments.length === 1 ? "" : "s"}
+              </span>
+            ) : null}
+          </div>
           <Button
             onClick={() => {
               void handleSend();
             }}
             size="sm"
-            disabled={!prompt.trim() || isLoading}
+            disabled={(!prompt.trim() && composerAttachments.length === 0) || isLoading || isPreparingAttachments}
             className="h-8 rounded-xl bg-gradient-to-r from-violet-600 to-indigo-700 text-xs text-white"
           >
             <Send className="h-3 w-3 mr-1" />
