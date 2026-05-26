@@ -57,8 +57,8 @@ export function ImageLibraryDialog({
         }
       }}
     >
-      <DialogContent className="max-w-4xl">
-        <DialogHeader>
+      <DialogContent className="flex max-h-[calc(100dvh-1rem)] max-w-4xl flex-col overflow-hidden p-0 sm:max-h-[calc(100dvh-2rem)]">
+        <DialogHeader className="px-4 pt-4 sm:px-6 sm:pt-6">
           <DialogTitle className="flex items-center gap-2">
             <ImageIcon className="h-4 w-4" />
             {title}
@@ -66,6 +66,7 @@ export function ImageLibraryDialog({
           <DialogDescription>{description}</DialogDescription>
         </DialogHeader>
 
+        <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-4 sm:px-6 sm:pb-6">
         {imageResources.length === 0 ? (
           <div className="flex min-h-[260px] flex-col items-center justify-center rounded-2xl border border-dashed bg-muted/20 px-6 text-center">
             <div className="mb-3 flex h-12 w-12 items-center justify-center rounded-2xl bg-blue-500/10 text-blue-500">
@@ -163,8 +164,9 @@ export function ImageLibraryDialog({
             </div>
           </div>
         )}
+        </div>
 
-        <DialogFooter>
+        <DialogFooter className="px-4 sm:px-6">
           <Button variant="outline" onClick={() => onOpenChange(false)}>
             Cerrar
           </Button>

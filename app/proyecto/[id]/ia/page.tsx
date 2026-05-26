@@ -85,10 +85,10 @@ export default function IAProjectPage({ params }: PageProps) {
   return (
     <div className="flex min-h-screen flex-col bg-muted/10">
       <header className="sticky top-0 z-40 border-b bg-background/95 backdrop-blur">
-        <div className="flex h-14 items-center gap-4 px-6">
+        <div className="flex h-auto flex-wrap items-center gap-3 px-4 py-3 sm:h-14 sm:flex-nowrap sm:px-6 sm:py-0">
           <SidebarTrigger />
           <Sparkles className="h-5 w-5 text-violet-500" />
-          <div className="flex-1">
+          <div className="min-w-0 flex-1">
             <h1 className="text-lg font-semibold">Mesa IA</h1>
           </div>
           {firstBook ? (
@@ -96,7 +96,7 @@ export default function IAProjectPage({ params }: PageProps) {
               <Button
                 size="sm"
                 variant="outline"
-                className="rounded-xl"
+                className="order-3 w-full rounded-xl sm:order-none sm:w-auto"
                 onClick={() => router.push(makeBookPath(project, firstBook))}
               >
                 <BookOpen className="mr-2 h-4 w-4" />
@@ -105,7 +105,7 @@ export default function IAProjectPage({ params }: PageProps) {
               <Button
                 size="sm"
                 variant="outline"
-                className="rounded-xl"
+                className="w-full rounded-xl sm:w-auto"
                 onClick={() => router.push(makeEditorialBookPath(project, firstBook))}
               >
                 <FileText className="mr-2 h-4 w-4" />
@@ -116,7 +116,7 @@ export default function IAProjectPage({ params }: PageProps) {
         </div>
       </header>
 
-      <div className="flex-1 p-6 md:p-8">
+      <div className="flex-1 p-4 md:p-8">
         <div className="mx-auto grid max-w-7xl gap-6 xl:grid-cols-[1.02fr_0.98fr]">
           <section className="space-y-6">
             <div className="rounded-[1.75rem] border bg-[radial-gradient(circle_at_top_right,rgba(139,92,246,0.16),transparent_34%),linear-gradient(180deg,rgba(255,255,255,0.96),rgba(248,250,252,0.94))] p-6 shadow-[0_18px_60px_rgba(15,23,42,0.08)] dark:bg-[radial-gradient(circle_at_top_right,rgba(139,92,246,0.2),transparent_36%),linear-gradient(180deg,rgba(15,23,42,0.92),rgba(15,23,42,0.88))]">
@@ -220,7 +220,7 @@ export default function IAProjectPage({ params }: PageProps) {
             </div>
           </section>
 
-          <section className="min-h-[720px] overflow-hidden rounded-[1.75rem] border bg-card/70 shadow-[0_18px_60px_rgba(15,23,42,0.08)]">
+          <section className="min-h-[60dvh] overflow-hidden rounded-[1.75rem] border bg-card/70 shadow-[0_18px_60px_rgba(15,23,42,0.08)] xl:min-h-[720px]">
             <AIPanel
               visible
               projectId={project.id}

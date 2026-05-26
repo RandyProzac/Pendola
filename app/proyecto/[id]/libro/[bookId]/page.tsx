@@ -1179,7 +1179,7 @@ export default function BookPage({ params }: PageProps) {
 
   return (
     <div
-      className={`flex h-screen flex-col overflow-hidden bg-background ${
+      className={`flex h-[100dvh] min-h-[100dvh] flex-col overflow-hidden bg-background ${
         isFocusMode ? "bg-[radial-gradient(circle_at_top,rgba(99,102,241,0.12),transparent_30%)]" : ""
       }`}
     >
@@ -1897,7 +1897,7 @@ export default function BookPage({ params }: PageProps) {
           <Sheet open={mobileAIOpen && !isFocusMode && viewMode === "write"} onOpenChange={setMobileAIOpen}>
             <SheetContent
               side="bottom"
-              className="h-[85vh] rounded-t-[1.75rem] border-t bg-background p-0 xl:hidden"
+              className="h-[85dvh] max-h-[calc(100dvh-0.5rem)] rounded-t-[1.75rem] border-t bg-background p-0 xl:hidden"
             >
               <SheetHeader className="border-b px-4 py-3 text-left">
                 <div className="flex items-start justify-between gap-3">

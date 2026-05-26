@@ -133,16 +133,16 @@ export default function PersonalizacionPage({ params }: PageProps) {
   return (
     <div className="flex min-h-screen flex-col bg-muted/10">
       <header className="sticky top-0 z-40 border-b bg-background/95 backdrop-blur">
-        <div className="flex h-14 items-center gap-4 px-6">
+        <div className="flex h-auto flex-wrap items-center gap-3 px-4 py-3 sm:h-14 sm:flex-nowrap sm:px-6 sm:py-0">
           <SidebarTrigger />
           <Sparkles className="h-5 w-5 text-violet-500" />
-          <div className="flex-1">
+          <div className="min-w-0 flex-1">
             <h1 className="text-lg font-semibold">Personalización</h1>
           </div>
           <Button
             size="sm"
             variant="outline"
-            className="rounded-xl"
+            className="order-3 w-full rounded-xl sm:order-none sm:w-auto"
             onClick={() => router.push(`/proyecto/${projectSegment}/recursos`)}
           >
             <Paperclip className="mr-2 h-4 w-4" />
@@ -151,7 +151,7 @@ export default function PersonalizacionPage({ params }: PageProps) {
         </div>
       </header>
 
-      <div className="flex-1 p-6 md:p-8">
+      <div className="flex-1 p-4 md:p-8">
         <div className="mx-auto grid max-w-6xl gap-6 xl:grid-cols-[1.05fr_0.95fr]">
           <section className="space-y-6">
             <div className="rounded-[1.75rem] border bg-[radial-gradient(circle_at_top_right,rgba(139,92,246,0.14),transparent_34%),linear-gradient(180deg,rgba(255,255,255,0.96),rgba(248,250,252,0.92))] p-6 shadow-[0_18px_60px_rgba(15,23,42,0.08)] dark:bg-[radial-gradient(circle_at_top_right,rgba(139,92,246,0.18),transparent_36%),linear-gradient(180deg,rgba(15,23,42,0.92),rgba(15,23,42,0.88))]">

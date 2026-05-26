@@ -153,12 +153,12 @@ export default function DashboardPage() {
     <div className="flex flex-col min-h-screen">
       {/* Header */}
       <header className="sticky top-0 z-40 border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
-        <div className="flex h-14 items-center gap-4 px-6">
+        <div className="flex h-auto flex-wrap items-center gap-3 px-4 py-3 sm:h-14 sm:flex-nowrap sm:px-6 sm:py-0">
           <SidebarTrigger />
-          <div className="flex-1">
+          <div className="min-w-0 flex-1">
             <h1 className="text-lg font-semibold">Mis Proyectos</h1>
           </div>
-          <Button onClick={() => router.push("/proyecto/nuevo")} size="sm">
+          <Button onClick={() => router.push("/proyecto/nuevo")} size="sm" className="order-3 w-full sm:order-none sm:w-auto">
             <Plus className="h-4 w-4 mr-2" />
             Nuevo Proyecto
           </Button>
@@ -167,7 +167,7 @@ export default function DashboardPage() {
       </header>
 
       {/* Content */}
-      <div className="flex-1 p-6">
+      <div className="flex-1 p-4 sm:p-6">
         {projects.length === 0 ? (
           /* Empty State */
           <div className="flex flex-col items-center justify-center min-h-[60vh] text-center">

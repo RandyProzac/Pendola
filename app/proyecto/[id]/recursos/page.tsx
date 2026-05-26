@@ -227,17 +227,18 @@ export default function ResourcesPage({ params }: PageProps) {
   }
 
   return (
-    <div className="flex flex-col min-h-screen">
+    <div className="flex min-h-screen flex-col">
       <header className="sticky top-0 z-40 border-b bg-background/95 backdrop-blur">
-        <div className="flex h-14 items-center gap-4 px-6">
+        <div className="flex h-auto flex-wrap items-center gap-3 px-4 py-3 sm:h-14 sm:flex-nowrap sm:px-6 sm:py-0">
           <SidebarTrigger />
           <Paperclip className="h-5 w-5 text-orange-500" />
-          <div className="flex-1">
+          <div className="min-w-0 flex-1">
             <h1 className="text-lg font-semibold">Recursos</h1>
           </div>
           <Button
             size="sm"
             disabled={isUploading}
+            className="order-3 w-full sm:order-none sm:w-auto"
             onClick={() => fileInputRef.current?.click()}
           >
             <Upload className="h-4 w-4 mr-2" />
@@ -254,7 +255,7 @@ export default function ResourcesPage({ params }: PageProps) {
         </div>
       </header>
 
-      <div className="p-6 space-y-5">
+      <div className="space-y-5 p-4 sm:p-6">
         {/* Info Banner */}
         <div className="max-w-3xl rounded-2xl border bg-muted/20 p-5">
           <div className="flex gap-3">
@@ -401,8 +402,8 @@ export default function ResourcesPage({ params }: PageProps) {
 
       {/* Preview Dialog */}
       <Dialog open={!!previewId} onOpenChange={() => setPreviewId(null)}>
-        <DialogContent className="max-w-lg">
-          <DialogHeader>
+        <DialogContent className="flex max-h-[calc(100dvh-1rem)] max-w-lg flex-col overflow-hidden p-0 sm:max-h-[calc(100dvh-2rem)]">
+          <DialogHeader className="px-4 pt-4 sm:px-6 sm:pt-6">
             <DialogTitle className="flex items-center gap-2">
               <Paperclip className="h-4 w-4" />
               {previewResource?.name}
@@ -412,7 +413,7 @@ export default function ResourcesPage({ params }: PageProps) {
             </DialogDescription>
           </DialogHeader>
           {previewResource && (
-            <div className="space-y-4 py-2">
+            <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-4 py-2 sm:px-6">
               {previewResource.fileType === "image" &&
               (previewResource.mediaPath || previewResource.fileData) ? (
                 <div className="rounded-lg overflow-hidden border">
@@ -470,7 +471,7 @@ export default function ResourcesPage({ params }: PageProps) {
               </div>
             </div>
           )}
-          <DialogFooter>
+          <DialogFooter className="px-4 sm:px-6">
             {previewResource && (
               <Button
                 variant="destructive"
