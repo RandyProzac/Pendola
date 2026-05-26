@@ -1,6 +1,6 @@
 "use client";
 
-import { type KeyboardEvent, use, useEffect, useRef, useState } from "react";
+import { type KeyboardEvent, use, useCallback, useEffect, useRef, useState } from "react";
 import {
   Paperclip,
   FileText,
@@ -42,8 +42,12 @@ import { prepareResourcePayload } from "@/lib/resources/extract";
 import { SidebarTrigger } from "@/components/ui/sidebar";
 import { resolveEntityId } from "@/lib/routing";
 import { useProjectStore } from "@/lib/store";
-import { getPublicMediaUrl, uploadResourceImage } from "@/lib/supabase/storage";
-import type { ResourceFileType } from "@/lib/types";
+import {
+  getPublicMediaUrl,
+  removeMediaFile,
+  uploadResourceImage,
+} from "@/lib/supabase/storage";
+import type { Resource, ResourceFileType } from "@/lib/types";
 import { toast } from "sonner";
 
 interface PageProps {
@@ -109,15 +113,43 @@ export default function ResourcesPage({ params }: PageProps) {
     callback();
   };
 
+  const performResourceDeletion = useCallback(async (
+    resource: Resource,
+    options?: { silent?: boolean }
+  ) => {
+    const silent = options?.silent ?? false;
+
+    try {
+      if (resource.mediaPath) {
+        await removeMediaFile(resource.mediaPath);
+      }
+
+      deleteResource(resource.id);
+
+      if (!silent) {
+        toast.success("Recurso eliminado");
+      }
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "No se pudo eliminar el archivo del bucket.";
+
+      if (!silent) {
+        toast.error("No se pudo eliminar el recurso", {
+          description: message,
+        });
+      }
+    }
+  }, [deleteResource]);
+
   useEffect(() => {
     const staleResource = resources.find((resource) =>
       isLegacyBrokenResource(resource.name, resource.fileType, resource.createdAt)
     );
 
     if (staleResource) {
-      deleteResource(staleResource.id);
+      void performResourceDeletion(staleResource, { silent: true });
     }
-  }, [deleteResource, resources]);
+  }, [performResourceDeletion, resources]);
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
@@ -175,10 +207,15 @@ export default function ResourcesPage({ params }: PageProps) {
     }
   };
 
-  const handleDeleteResource = (id: string) => {
-    deleteResource(id);
+  const handleDeleteResource = async (id: string) => {
+    const resource = resources.find((item) => item.id === id);
+    if (!resource) {
+      setDeleteId(null);
+      return;
+    }
+
     setDeleteId(null);
-    toast.success("Recurso eliminado");
+    await performResourceDeletion(resource);
   };
 
   if (!project) {
