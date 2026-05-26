@@ -1277,6 +1277,7 @@ export default function EditorialBookPage({ params }: PageProps) {
                 <AIPanel
                   visible={mobileAIOpen && !isFocusMode}
                   className="h-full w-full border-l-0"
+                  compactMode
                   projectId={project.id}
                   chapterId={selectedChapter?.id}
                   workspace="editorial"

@@ -1921,6 +1921,7 @@ export default function BookPage({ params }: PageProps) {
                 <AIPanel
                   visible={mobileAIOpen && !isFocusMode && viewMode === "write"}
                   className="h-full w-full border-l-0"
+                  compactMode
                   projectId={project.id}
                   chapterId={selectedChapter?.id}
                   workspace="writing"

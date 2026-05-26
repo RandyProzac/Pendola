@@ -247,6 +247,7 @@ interface AIPanelProps {
   inputPlaceholder?: string;
   emptyStateText?: string;
   disableCreativeTransforms?: boolean;
+  compactMode?: boolean;
   externalPromptRequest?: {
     id: string;
     prompt: string;
@@ -276,6 +277,7 @@ export function AIPanel({
   inputPlaceholder,
   emptyStateText,
   disableCreativeTransforms = false,
+  compactMode = false,
   externalPromptRequest,
   className,
   onInsertAtCursor,
@@ -723,15 +725,16 @@ Reglas:
     <div
       className={cn(
         "flex h-full min-h-0 w-[22rem] flex-col overflow-hidden border-l bg-card/72 backdrop-blur-xl",
+        compactMode && "w-full border-l-0 bg-background/95 backdrop-blur-none",
         className
       )}
     >
       {/* Header */}
-      <div className="shrink-0 border-b bg-background/75 px-4 py-4">
-        <div className="mb-4 rounded-2xl border bg-[radial-gradient(circle_at_top_right,rgba(139,92,246,0.14),transparent_38%),linear-gradient(180deg,rgba(255,255,255,0.92),rgba(248,250,252,0.88))] p-4 dark:bg-[radial-gradient(circle_at_top_right,rgba(139,92,246,0.18),transparent_40%),linear-gradient(180deg,rgba(15,23,42,0.9),rgba(15,23,42,0.84))]">
-          <div className="mb-3 flex items-start justify-between gap-2">
-            <div className="flex min-w-0 items-center gap-3">
-              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-violet-500/12 text-violet-500">
+      <div className={cn("shrink-0 border-b bg-background/75 px-4 py-4", compactMode && "px-3 py-3")}>
+        {compactMode ? (
+          <div className="mb-3 flex items-center justify-between gap-2">
+            <div className="flex min-w-0 items-center gap-2">
+              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-2xl bg-violet-500/12 text-violet-500">
                 <Sparkles className="h-4 w-4" />
               </div>
               <div className="min-w-0">
@@ -754,11 +757,38 @@ Reglas:
               </Button>
             </div>
           </div>
-
-        </div>
+        ) : (
+          <div className="mb-4 rounded-2xl border bg-[radial-gradient(circle_at_top_right,rgba(139,92,246,0.14),transparent_38%),linear-gradient(180deg,rgba(255,255,255,0.92),rgba(248,250,252,0.88))] p-4 dark:bg-[radial-gradient(circle_at_top_right,rgba(139,92,246,0.18),transparent_40%),linear-gradient(180deg,rgba(15,23,42,0.9),rgba(15,23,42,0.84))]">
+            <div className="mb-3 flex items-start justify-between gap-2">
+              <div className="flex min-w-0 items-center gap-3">
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-violet-500/12 text-violet-500">
+                  <Sparkles className="h-4 w-4" />
+                </div>
+                <div className="min-w-0">
+                  <span className="text-sm font-semibold">{resolvedPanelTitle}</span>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <Button
+                  type="button"
+                  size="sm"
+                  variant={showArchived ? "secondary" : "outline"}
+                  className="h-8 rounded-xl px-2.5"
+                  onClick={() => setShowArchived((current) => !current)}
+                >
+                  <Archive className="mr-1 h-3.5 w-3.5" />
+                  {showArchived ? "Activas" : `Archivadas ${archivedConversations.length ? `(${archivedConversations.length})` : ""}`}
+                </Button>
+                <Button type="button" size="sm" variant="outline" className="h-8 rounded-xl px-2.5" onClick={handleNewConversation}>
+                  <MessageSquarePlus className="h-3.5 w-3.5" />
+                </Button>
+              </div>
+            </div>
+          </div>
+        )}
 
         {activeConversation && (
-          <div className="rounded-2xl border bg-card/55 p-3">
+          <div className={cn("rounded-2xl border bg-card/55 p-3", compactMode && "p-2.5")}>
             <div className="flex items-center gap-2">
               {editingTitle ? (
                 <>
@@ -853,7 +883,7 @@ Reglas:
               )}
             </div>
             {conversations.length > 0 && (
-              <ScrollArea className="mt-3 max-h-28">
+              <ScrollArea className={cn("mt-3 max-h-28", compactMode && "mt-2 max-h-20")}>
                 <div className="space-y-1.5">
                   {conversations.map((conversation) => (
                     <button
@@ -895,7 +925,7 @@ Reglas:
       </div>
 
       {/* Messages */}
-      <ScrollArea className="min-h-0 flex-1">
+      <ScrollArea className="min-h-0 flex-1 touch-pan-y">
         <div className="space-y-4 px-4 py-4">
           {messages.length === 0 && (
             <div className="rounded-2xl border border-dashed bg-muted/20 px-5 py-8 text-center text-muted-foreground">
@@ -1091,7 +1121,7 @@ Reglas:
       </ScrollArea>
 
       {/* Input */}
-      <div className="shrink-0 border-t bg-background/82 p-3">
+      <div className="shrink-0 border-t bg-background/82 p-3 pb-[calc(env(safe-area-inset-bottom)+0.75rem)]">
         {typeof budgetProgress === "number" ? (
           <div
             className={cn(
