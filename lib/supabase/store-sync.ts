@@ -7,6 +7,7 @@ import {
   deleteEntityMentionsByEntityRemote,
   deleteIdeaNoteRemote,
   deleteProjectRemote,
+  deleteProjectShareRemote,
   deleteResourceRemote,
   deleteScenarioRemote,
   replaceEntityMentionsForChapterRemote,
@@ -18,6 +19,7 @@ import {
   upsertEditorialDraftRemote,
   upsertIdeaNoteRemote,
   upsertProjectRemote,
+  upsertProjectShareRemote,
   upsertResourceRemote,
   upsertScenarioRemote,
   upsertUserSettingsRemote,
@@ -34,6 +36,7 @@ import type {
   EntityMention,
   IdeaNote,
   Project,
+  ProjectShare,
   Resource,
   Scenario,
   WriterPreferences,
@@ -107,6 +110,18 @@ export function syncProjectRemote(project: Project, delay = 400) {
 
 export function syncProjectDeletionRemote(projectId: string) {
   runNow(() => deleteProjectRemote(projectId));
+}
+
+export function syncProjectShareRemote(share: ProjectShare, delay = 150) {
+  scheduleTask(`project-share:${share.projectId}`, async () => {
+    const userId = getCurrentSupabaseUserId();
+    if (!userId) return;
+    await upsertProjectShareRemote(userId, share);
+  }, delay, [`project:${share.projectId}`]);
+}
+
+export function syncProjectShareDeletionRemote(shareId: string) {
+  runNow(() => deleteProjectShareRemote(shareId));
 }
 
 export function syncBookRemote(book: Book, delay = 400) {

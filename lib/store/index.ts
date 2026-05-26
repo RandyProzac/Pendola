@@ -30,6 +30,8 @@ import {
   syncIdeaNoteDeletionRemote,
   syncIdeaNoteRemote,
   syncProjectDeletionRemote,
+  syncProjectShareDeletionRemote,
+  syncProjectShareRemote,
   syncProjectRemote,
   syncResourceDeletionRemote,
   syncResourceRemote,
@@ -60,6 +62,7 @@ import type {
   EditorialDraft,
   AIConversationWorkspace,
   ProjectBackup,
+  ProjectShare,
 } from '@/lib/types'
 
 interface AIResponseCacheEntry {
@@ -74,10 +77,14 @@ interface AIResponseCacheEntry {
 interface ProjectStore {
   // --- Projects ---
   projects: Project[]
+  projectShares: ProjectShare[]
   currentProjectId: string | null
   createProject: (data: Partial<Project>) => Project
   updateProject: (id: string, data: Partial<Project>) => void
   deleteProject: (id: string) => void
+  upsertProjectShare: (share: ProjectShare) => ProjectShare
+  removeProjectShare: (shareId: string) => void
+  getProjectShare: (projectId: string) => ProjectShare | undefined
   setCurrentProject: (id: string | null) => void
   getCurrentProject: () => Project | undefined
 
@@ -480,6 +487,7 @@ export const useProjectStore = create<ProjectStore>()(
     (set, get) => ({
       // ========== PROJECTS ==========
       projects: [],
+      projectShares: [],
       currentProjectId: null,
 
       createProject: (data) => {
@@ -527,6 +535,7 @@ export const useProjectStore = create<ProjectStore>()(
       deleteProject: (id) => {
         set((state) => ({
           projects: state.projects.filter((p) => p.id !== id),
+          projectShares: state.projectShares.filter((share) => share.projectId !== id),
           books: state.books.filter((b) => b.projectId !== id),
           chapters: state.chapters.filter((c) => c.projectId !== id),
           chapterSnapshots: state.chapterSnapshots.filter((snapshot) => snapshot.projectId !== id),
@@ -540,6 +549,28 @@ export const useProjectStore = create<ProjectStore>()(
           currentProjectId: state.currentProjectId === id ? null : state.currentProjectId,
         }))
         syncProjectDeletionRemote(id)
+      },
+
+      upsertProjectShare: (share) => {
+        set((state) => ({
+          projectShares: [
+            share,
+            ...state.projectShares.filter((item) => item.projectId !== share.projectId),
+          ],
+        }))
+        syncProjectShareRemote(share, 0)
+        return share
+      },
+
+      removeProjectShare: (shareId) => {
+        set((state) => ({
+          projectShares: state.projectShares.filter((share) => share.id !== shareId),
+        }))
+        syncProjectShareDeletionRemote(shareId)
+      },
+
+      getProjectShare: (projectId) => {
+        return get().projectShares.find((share) => share.projectId === projectId)
       },
 
       setCurrentProject: (id) => set({ currentProjectId: id }),
@@ -1641,6 +1672,7 @@ export const useProjectStore = create<ProjectStore>()(
 
         set((state) => ({
           projects: [...state.projects, imported.project],
+          projectShares: state.projectShares,
           books: [...state.books, ...imported.books],
           chapters: [...state.chapters, ...imported.chapters],
           chapterSnapshots: [...state.chapterSnapshots, ...imported.chapterSnapshots],
@@ -1680,7 +1712,7 @@ export const useProjectStore = create<ProjectStore>()(
     {
       name: browserLocalAdapter.key,
       storage: createPersistStorage(browserLocalAdapter),
-      version: 14,
+      version: 15,
       migrate: (persistedState) => {
         const state = persistedState as Partial<ProjectStore> | undefined
         if (!state) return persistedState
@@ -1694,6 +1726,7 @@ export const useProjectStore = create<ProjectStore>()(
             editorialInstructions: project.editorialInstructions || '',
             coverImagePath: project.coverImagePath || undefined,
           })),
+          projectShares: state.projectShares || [],
           chapters: (state.chapters || []).map((chapter) => ({
             ...chapter,
             synopsis: chapter.synopsis || '',

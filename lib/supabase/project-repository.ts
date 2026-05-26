@@ -13,6 +13,7 @@ import type {
   IdeaNote,
   Project,
   ProjectBackup,
+  ProjectShare,
   Resource,
   Scenario,
   WriterPreferences,
@@ -29,6 +30,7 @@ export class SupabaseSetupError extends Error {
 
 export interface RemoteWorkspaceState {
   projects: Project[];
+  projectShares: ProjectShare[];
   books: Book[];
   chapters: Chapter[];
   chapterSnapshots: ChapterSnapshot[];
@@ -63,6 +65,15 @@ function isMissingAIMessageUsageColumnErrorMessage(message: string) {
   return (
     message.includes("Could not find the 'usage' column of 'ai_messages'") ||
     (message.includes("schema cache") && message.includes("usage") && message.includes("ai_messages"))
+  );
+}
+
+function isMissingProjectSharesTableErrorMessage(message: string) {
+  return (
+    message.includes("project_shares") &&
+    (message.includes("schema cache") ||
+      message.includes("Could not find the table") ||
+      (message.includes("relation") && message.includes("does not exist")))
   );
 }
 
@@ -167,6 +178,18 @@ function mapProjectRow(row: Record<string, unknown>): Project {
           : "latinas",
     },
     status: (row.status as Project["status"]) ?? "planificando",
+    createdAt: String(row.created_at),
+    updatedAt: String(row.updated_at),
+  };
+}
+
+function mapProjectShareRow(row: Record<string, unknown>): ProjectShare {
+  return {
+    id: String(row.id),
+    userId: String(row.user_id),
+    projectId: String(row.project_id),
+    token: String(row.token ?? ""),
+    isActive: typeof row.is_active === "boolean" ? row.is_active : false,
     createdAt: String(row.created_at),
     updatedAt: String(row.updated_at),
   };
@@ -485,6 +508,18 @@ function toProjectRow(userId: string, project: Project) {
   };
 }
 
+function toProjectShareRow(userId: string, share: ProjectShare) {
+  return {
+    id: share.id,
+    user_id: userId,
+    project_id: share.projectId,
+    token: share.token,
+    is_active: share.isActive,
+    created_at: share.createdAt,
+    updated_at: share.updatedAt,
+  };
+}
+
 function toBookRow(userId: string, book: Book) {
   return {
     id: book.id,
@@ -732,6 +767,7 @@ export async function fetchRemoteWorkspaceState(
 
   const [
     projectsResult,
+    projectSharesResult,
     booksResult,
     chaptersResult,
     snapshotsResult,
@@ -746,6 +782,7 @@ export async function fetchRemoteWorkspaceState(
     userSettingsResult,
   ] = await Promise.all([
     client.from("projects").select("*").eq("user_id", userId).order("updated_at", { ascending: false }),
+    client.from("project_shares").select("*").eq("user_id", userId).order("updated_at", { ascending: false }),
     client.from("books").select("*").eq("user_id", userId).order("order", { ascending: true }),
     client.from("chapters").select("*").eq("user_id", userId).order("order", { ascending: true }),
     client.from("chapter_snapshots").select("*").eq("user_id", userId).order("created_at", { ascending: false }),
@@ -764,6 +801,11 @@ export async function fetchRemoteWorkspaceState(
     projectsResult.error,
     (projectsResult.data ?? []).map((row) => mapProjectRow(row))
   );
+  const projectShares = projectSharesResult.error
+    ? isMissingProjectSharesTableErrorMessage(projectSharesResult.error.message)
+      ? []
+      : ensureNoError(projectSharesResult.error, [] as ProjectShare[])
+    : (projectSharesResult.data ?? []).map((row) => mapProjectShareRow(row));
   const books = ensureNoError(
     booksResult.error,
     (booksResult.data ?? []).map((row) => mapBookRow(row))
@@ -826,6 +868,7 @@ export async function fetchRemoteWorkspaceState(
 
   return {
     projects,
+    projectShares,
     books,
     chapters,
     chapterSnapshots,
@@ -839,6 +882,28 @@ export async function fetchRemoteWorkspaceState(
     aiSettings: settings?.aiSettings,
     writerPreferences: settings?.writerPreferences,
   };
+}
+
+export async function listProjectSharesRemote(userId: string) {
+  const client = getClient();
+  const result = await client
+    .from("project_shares")
+    .select("*")
+    .eq("user_id", userId)
+    .order("updated_at", { ascending: false });
+
+  if (result.error) {
+    if (isMissingProjectSharesTableErrorMessage(result.error.message)) {
+      return [];
+    }
+
+    const normalizedError = normalizeSupabaseError(result.error);
+    if (normalizedError) {
+      throw normalizedError;
+    }
+  }
+
+  return (result.data ?? []).map((row) => mapProjectShareRow(row));
 }
 
 export async function upsertUserSettingsRemote(
@@ -866,6 +931,27 @@ export async function deleteProjectRemote(projectId: string) {
   const client = getClient();
   const { error } = await client.from("projects").delete().eq("id", projectId);
   if (error) throw new Error(error.message);
+}
+
+export async function upsertProjectShareRemote(userId: string, share: ProjectShare) {
+  const client = getClient();
+  const { error } = await client
+    .from("project_shares")
+    .upsert(toProjectShareRow(userId, share));
+
+  const normalizedError = normalizeSupabaseError(error);
+  if (normalizedError) {
+    throw normalizedError;
+  }
+}
+
+export async function deleteProjectShareRemote(shareId: string) {
+  const client = getClient();
+  const { error } = await client.from("project_shares").delete().eq("id", shareId);
+  const normalizedError = normalizeSupabaseError(error);
+  if (normalizedError) {
+    throw normalizedError;
+  }
 }
 
 export async function upsertBookRemote(userId: string, book: Book) {

@@ -5,7 +5,6 @@ import StarterKit from "@tiptap/starter-kit";
 import Placeholder from "@tiptap/extension-placeholder";
 import CharacterCount from "@tiptap/extension-character-count";
 import Highlight from "@tiptap/extension-highlight";
-import Underline from "@tiptap/extension-underline";
 import TextAlign from "@tiptap/extension-text-align";
 import Typography from "@tiptap/extension-typography";
 import { NodeSelection } from "@tiptap/pm/state";
@@ -783,7 +782,6 @@ export const NarrativeEditor = forwardRef<
       Placeholder.configure({ placeholder }),
       CharacterCount,
       Highlight.configure({ multicolor: true }),
-      Underline,
       EntityMentionMark,
       TextAlign.configure({
         types: ["heading", "paragraph"],

@@ -22,7 +22,17 @@ export function getPublicMediaUrl(path?: string) {
   if (!path) return null;
 
   const client = getSupabaseBrowserClient();
-  if (!client) return null;
+  if (!client) {
+    const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    if (!url) return null;
+
+    const normalizedPath = path
+      .split("/")
+      .map((segment) => encodeURIComponent(segment))
+      .join("/");
+
+    return `${url}/storage/v1/object/public/${SUPABASE_MEDIA_BUCKET}/${normalizedPath}`;
+  }
 
   const { data } = client.storage.from(SUPABASE_MEDIA_BUCKET).getPublicUrl(path);
   return data.publicUrl;

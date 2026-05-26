@@ -105,6 +105,7 @@ function applyRemoteState(remoteState: RemoteWorkspaceState) {
     return {
       ...state,
       projects: remoteState.projects,
+      projectShares: remoteState.projectShares,
       books: remoteState.books,
       chapters: remoteState.chapters,
       chapterSnapshots: remoteState.chapterSnapshots,

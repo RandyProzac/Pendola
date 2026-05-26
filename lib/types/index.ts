@@ -58,6 +58,16 @@ export interface Project {
   updatedAt: string
 }
 
+export interface ProjectShare {
+  id: string
+  userId: string
+  projectId: string
+  token: string
+  isActive: boolean
+  createdAt: string
+  updatedAt: string
+}
+
 // --- Book ---
 export type BookStatus = 'borrador' | 'revision' | 'completado'
 
@@ -393,6 +403,39 @@ export interface AIConversation {
   isGenerating?: boolean
   createdAt: string
   updatedAt: string
+}
+
+export interface PublicReadProject {
+  id: string
+  title: string
+  premise: string
+  genre: string
+  coverColor: string
+  coverImagePath?: string
+  authorName: string
+  penName: string
+  updatedAt: string
+}
+
+export interface PublicReadBook {
+  id: string
+  title: string
+  order: number
+}
+
+export interface PublicReadChapter {
+  id: string
+  bookId: string
+  title: string
+  order: number
+  content: string
+  wordCount: number
+}
+
+export interface PublicProjectReadModel {
+  project: PublicReadProject
+  books: PublicReadBook[]
+  chapters: PublicReadChapter[]
 }
 
 export interface ProjectBackup {

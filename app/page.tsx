@@ -10,9 +10,12 @@ import {
   Clock,
   Sparkles,
   Copy,
+  Eye,
+  EyeOff,
   MoreHorizontal,
   Trash2,
 } from "lucide-react";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -22,11 +25,14 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { useSupabaseAuth } from "@/components/auth/auth-gate";
 import { SidebarTrigger } from "@/components/ui/sidebar";
 import { ThemeToggle } from "@/components/layout/theme-toggle";
 import { estimatePageRange } from "@/lib/publishing";
+import { upsertProjectShareRemote } from "@/lib/supabase/project-repository";
 import { useProjectStore } from "@/lib/store";
 import { makeProjectPath } from "@/lib/routing";
+import { isRemoteSyncEnabled } from "@/lib/supabase/runtime";
 import { getPublicMediaUrl } from "@/lib/supabase/storage";
 import {
   DropdownMenu,
@@ -70,10 +76,18 @@ function formatCompactPageEstimate(minPages: number, maxPages: number) {
   return `${minPages}–${maxPages} p.`;
 }
 
+function createShareToken() {
+  const bytes = new Uint8Array(18);
+  crypto.getRandomValues(bytes);
+  return Array.from(bytes, (value) => value.toString(16).padStart(2, "0")).join("");
+}
+
 export default function DashboardPage() {
   const router = useRouter();
+  const { user } = useSupabaseAuth();
   const {
     projects,
+    projectShares,
     getBooksByProject,
     chapters,
     characters,
@@ -81,8 +95,12 @@ export default function DashboardPage() {
     createBook,
     createChapter,
     deleteProject,
+    upsertProjectShare,
+    getProjectShare,
   } = useProjectStore();
   const [deleteId, setDeleteId] = useState<string | null>(null);
+  const [sharingProjectId, setSharingProjectId] = useState<string | null>(null);
+  const canPublishProjects = Boolean(user?.id) && isRemoteSyncEnabled();
 
   const getProjectStats = (projectId: string) => {
     const books = getBooksByProject(projectId);
@@ -147,6 +165,73 @@ export default function DashboardPage() {
           });
         });
     });
+  };
+
+  const handleCopyReadLink = async (projectId: string) => {
+    if (!canPublishProjects || !user?.id) {
+      toast.error("Comparte desde la nube", {
+        description: "Inicia sesión y sincroniza este proyecto para compartirlo con link.",
+      });
+      return;
+    }
+
+    setSharingProjectId(projectId);
+
+    try {
+      const existingShare = getProjectShare(projectId);
+      const now = new Date().toISOString();
+      const nextShare = {
+        id: existingShare?.id || crypto.randomUUID(),
+        userId: user.id,
+        projectId,
+        token: existingShare?.token || createShareToken(),
+        isActive: true,
+        createdAt: existingShare?.createdAt || now,
+        updatedAt: now,
+      };
+      await upsertProjectShareRemote(user.id, nextShare);
+      upsertProjectShare(nextShare);
+      const shareUrl = `${window.location.origin}/leer/${nextShare.token}`;
+      await navigator.clipboard.writeText(shareUrl);
+      toast.success("Link copiado", {
+        description: "Ya puedes enviar el acceso de solo lectura de este proyecto.",
+      });
+    } catch (error) {
+      console.error("[Pendola][Share]", error);
+      toast.error("No se pudo publicar el proyecto", {
+        description:
+          error instanceof Error
+            ? error.message
+            : "Revisa la sincronización con Supabase e inténtalo otra vez.",
+      });
+    } finally {
+      setSharingProjectId(null);
+    }
+  };
+
+  const handleDisableReadLink = (projectId: string) => {
+    const existingShare = getProjectShare(projectId);
+    if (!existingShare) return;
+
+    void (async () => {
+      try {
+        const nextShare = {
+          ...existingShare,
+          isActive: false,
+          updatedAt: new Date().toISOString(),
+        };
+        await upsertProjectShareRemote(existingShare.userId, nextShare);
+        upsertProjectShare(nextShare);
+        toast.success("Lectura pública desactivada", {
+          description: "El link dejará de mostrar el proyecto compartido.",
+        });
+      } catch (error) {
+        toast.error("No se pudo desactivar el link", {
+          description:
+            error instanceof Error ? error.message : "Inténtalo otra vez en unos segundos.",
+        });
+      }
+    })();
   };
 
   return (
@@ -237,6 +322,7 @@ export default function DashboardPage() {
           <div className="grid grid-cols-1 gap-5 md:grid-cols-2 lg:grid-cols-3">
             {projects.map((project) => {
               const stats = getProjectStats(project.id);
+              const projectShare = projectShares.find((share) => share.projectId === project.id);
               const projectBooks = getBooksByProject(project.id);
               const booksWithPages = projectBooks.map((book) => {
                 const bookWordCount = chapters
@@ -273,7 +359,26 @@ export default function DashboardPage() {
                           </button>
                         }
                       />
-                      <DropdownMenuContent align="end" className="w-44">
+                      <DropdownMenuContent align="end" className="w-52">
+                        <DropdownMenuItem
+                          disabled={!canPublishProjects || sharingProjectId === project.id}
+                          onClick={() => {
+                            void handleCopyReadLink(project.id);
+                          }}
+                        >
+                          <Eye className="h-4 w-4" />
+                          {sharingProjectId === project.id ? "Generando link..." : "Copiar link de lectura"}
+                        </DropdownMenuItem>
+                        {projectShare?.isActive ? (
+                          <DropdownMenuItem
+                            onClick={() => {
+                              handleDisableReadLink(project.id);
+                            }}
+                          >
+                            <EyeOff className="h-4 w-4" />
+                            Desactivar lectura pública
+                          </DropdownMenuItem>
+                        ) : null}
                         <DropdownMenuItem
                           onClick={() => {
                             handleDuplicateProject(project.id);
@@ -383,6 +488,14 @@ export default function DashboardPage() {
                       )}
 
                       <div className="flex flex-wrap items-center gap-2 border-t pt-2 text-xs text-muted-foreground">
+                        {projectShare?.isActive ? (
+                          <Badge
+                            variant="outline"
+                            className="border-violet-500/30 bg-violet-500/10 text-violet-700 dark:text-violet-200"
+                          >
+                            Lectura pública
+                          </Badge>
+                        ) : null}
                         <Badge variant="outline" className={statusInfo.className}>
                           {statusInfo.label}
                         </Badge>
