@@ -49,10 +49,12 @@ export function NarrativeRenderer({
   content,
   className,
   plainMentions = false,
+  maxWidth = "76ch",
 }: {
   content: string;
   className?: string;
   plainMentions?: boolean;
+  maxWidth?: string;
 }) {
   const normalizedContent = useMemo(() => normalizeContent(content || ""), [content]);
   const editor = useEditor({
@@ -81,7 +83,7 @@ export function NarrativeRenderer({
           plainMentions && "tiptap--plain-mentions",
           className
         ),
-        style: ["--editor-font-size:20px", "--editor-line-height:1.9", "max-width:76ch"].join(";"),
+        style: ["--editor-font-size:20px", "--editor-line-height:1.9", `max-width:${maxWidth}`].join(";"),
       },
     },
   });

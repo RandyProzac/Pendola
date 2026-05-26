@@ -78,15 +78,15 @@ export default async function PublicReadProjectPage({
 
   return (
     <div className="min-h-screen bg-[radial-gradient(circle_at_top,rgba(139,92,246,0.14),transparent_28%),linear-gradient(180deg,hsl(var(--background)),hsl(var(--background)))] text-foreground">
-      <div className="mx-auto flex max-w-6xl flex-col gap-10 px-5 py-8 sm:px-8 sm:py-10 lg:px-12">
+      <div className="mx-auto flex w-full max-w-[1680px] flex-col gap-8 px-4 py-6 sm:gap-10 sm:px-6 sm:py-8 lg:px-10 xl:px-12 2xl:px-16">
         <section className="overflow-hidden rounded-[2rem] border bg-card shadow-sm">
-          <div className="grid gap-0 lg:grid-cols-[1.2fr_0.8fr]">
-            <div className="flex flex-col justify-between px-6 py-8 sm:px-8 sm:py-10">
+          <div className="grid gap-0 xl:grid-cols-[minmax(0,1.35fr)_minmax(320px,0.65fr)]">
+            <div className="flex flex-col justify-between px-5 py-6 sm:px-8 sm:py-8 lg:px-10 lg:py-10">
               <div>
                 <Badge variant="outline" className="mb-4 border-violet-500/25 bg-violet-500/10 text-violet-700 dark:text-violet-200">
                   Lectura compartida
                 </Badge>
-                <h1 className="max-w-3xl text-3xl font-semibold tracking-tight sm:text-4xl lg:text-5xl">
+                <h1 className="max-w-5xl text-3xl font-semibold tracking-tight sm:text-4xl lg:text-5xl xl:text-6xl">
                   {project.title}
                 </h1>
                 {authorLine ? (
@@ -95,7 +95,7 @@ export default async function PublicReadProjectPage({
                   </p>
                 ) : null}
                 {project.premise ? (
-                  <p className="mt-6 max-w-3xl text-base leading-8 text-muted-foreground sm:text-lg">
+                  <p className="mt-6 max-w-4xl text-base leading-8 text-muted-foreground sm:text-lg xl:text-[1.15rem]">
                     {project.premise}
                   </p>
                 ) : null}
@@ -111,7 +111,7 @@ export default async function PublicReadProjectPage({
             </div>
 
             <div
-              className="relative min-h-[240px] border-t lg:min-h-full lg:border-t-0 lg:border-l"
+              className="relative min-h-[240px] border-t xl:min-h-full xl:border-l xl:border-t-0"
               style={{ backgroundColor: project.coverColor }}
             >
               {coverUrl ? (
@@ -127,12 +127,12 @@ export default async function PublicReadProjectPage({
           </div>
         </section>
 
-        <section className="grid gap-6 lg:grid-cols-[280px_minmax(0,1fr)]">
-          <aside className="h-fit rounded-[1.75rem] border bg-card p-5 shadow-sm lg:sticky lg:top-6">
+        <section className="grid gap-6 xl:grid-cols-[320px_minmax(0,1fr)] 2xl:grid-cols-[360px_minmax(0,1fr)]">
+          <aside className="h-fit rounded-[1.75rem] border bg-card p-4 shadow-sm sm:p-5 xl:sticky xl:top-6">
             <p className="text-xs font-medium uppercase tracking-[0.22em] text-muted-foreground">
               Índice
             </p>
-            <div className="mt-4 space-y-5">
+            <div className="mt-4 grid gap-5 sm:grid-cols-2 xl:grid-cols-1">
               {books.map((book) => {
                 const scopedChapters = chaptersByBook.get(book.id) ?? [];
                 return (
@@ -165,7 +165,11 @@ export default async function PublicReadProjectPage({
               const scopedChapters = chaptersByBook.get(book.id) ?? [];
 
               return (
-                <article key={book.id} id={`libro-${book.id}`} className="rounded-[1.75rem] border bg-card px-5 py-6 shadow-sm sm:px-8 sm:py-8">
+                <article
+                  key={book.id}
+                  id={`libro-${book.id}`}
+                  className="rounded-[1.75rem] border bg-card px-4 py-5 shadow-sm sm:px-7 sm:py-7 lg:px-10 lg:py-9"
+                >
                   <header className="border-b pb-5">
                     <p className="text-xs uppercase tracking-[0.22em] text-muted-foreground">
                       Libro
@@ -189,7 +193,7 @@ export default async function PublicReadProjectPage({
                             </Badge>
                           </div>
                           {hasReadableContent ? (
-                            <NarrativeRenderer content={chapter.content} plainMentions />
+                            <NarrativeRenderer content={chapter.content} plainMentions maxWidth="88ch" />
                           ) : (
                             <p className="text-sm italic text-muted-foreground">
                               Este capítulo todavía no tiene contenido para lectura.
