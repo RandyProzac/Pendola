@@ -32,6 +32,7 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import {
   Sheet,
+  SheetClose,
   SheetContent,
   SheetDescription,
   SheetHeader,
@@ -1899,12 +1900,24 @@ export default function BookPage({ params }: PageProps) {
               className="h-[85vh] rounded-t-[1.75rem] border-t bg-background p-0 xl:hidden"
             >
               <SheetHeader className="border-b px-4 py-3 text-left">
-                <SheetTitle>Mesa IA</SheetTitle>
-                <SheetDescription>
-                  Ideas, revisión e inserción directa para este capítulo.
-                </SheetDescription>
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <SheetTitle>Mesa IA</SheetTitle>
+                    <SheetDescription>
+                      Ideas, revisión e inserción directa para este capítulo.
+                    </SheetDescription>
+                  </div>
+                  <SheetClose
+                    render={
+                      <Button variant="ghost" size="icon-sm" className="shrink-0 rounded-full" />
+                    }
+                  >
+                    <ChevronDown className="h-4 w-4" />
+                    <span className="sr-only">Cerrar IA</span>
+                  </SheetClose>
+                </div>
               </SheetHeader>
-              <div className="min-h-0 flex-1">
+              <div className="min-h-0 flex-1 overflow-hidden touch-pan-y">
                 <AIPanel
                   visible={mobileAIOpen && !isFocusMode && viewMode === "write"}
                   className="h-full w-full border-l-0"
