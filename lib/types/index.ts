@@ -327,7 +327,7 @@ export interface EntityMention {
 
 // --- Hurricane Model (beats) ---
 export type AIMode = 'piloto' | 'copiloto' | 'ideas' | 'revision' | 'editorial'
-export type AIConversationWorkspace = 'writing' | 'editorial'
+export type AIConversationWorkspace = 'writing' | 'editorial' | 'project'
 
 export type AIProvider = 'ollama' | 'openai' | 'anthropic' | 'gemini'
 

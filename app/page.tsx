@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   Plus,
@@ -14,6 +14,11 @@ import {
   EyeOff,
   MoreHorizontal,
   Trash2,
+  Download,
+  Upload,
+  Cloud,
+  Laptop,
+  ShieldCheck,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -28,6 +33,7 @@ import { Badge } from "@/components/ui/badge";
 import { useSupabaseAuth } from "@/components/auth/auth-gate";
 import { SidebarTrigger } from "@/components/ui/sidebar";
 import { ThemeToggle } from "@/components/layout/theme-toggle";
+import { parseProjectBackup, serializeProjectBackup } from "@/lib/persistence/project-backup";
 import { estimatePageRange } from "@/lib/publishing";
 import { upsertProjectShareRemote } from "@/lib/supabase/project-repository";
 import { useProjectStore } from "@/lib/store";
@@ -82,6 +88,18 @@ function createShareToken() {
   return Array.from(bytes, (value) => value.toString(16).padStart(2, "0")).join("");
 }
 
+function buildBackupFilename(title: string, exportedAt: string) {
+  const safeTitle = title
+    .trim()
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "") || "proyecto";
+
+  return `${safeTitle}-${exportedAt.slice(0, 10)}.pendola.json`;
+}
+
 export default function DashboardPage() {
   const router = useRouter();
   const { user } = useSupabaseAuth();
@@ -95,12 +113,18 @@ export default function DashboardPage() {
     createBook,
     createChapter,
     deleteProject,
+    exportProjectBackup,
+    importProjectBackup,
     upsertProjectShare,
     getProjectShare,
   } = useProjectStore();
+  const importBackupInputRef = useRef<HTMLInputElement>(null);
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [sharingProjectId, setSharingProjectId] = useState<string | null>(null);
+  const [isImportingBackup, setIsImportingBackup] = useState(false);
   const canPublishProjects = Boolean(user?.id) && isRemoteSyncEnabled();
+  const localOnlyProjects = projects.filter((project) => project.userId === "local-user").length;
+  const syncedProjects = projects.length - localOnlyProjects;
 
   const getProjectStats = (projectId: string) => {
     const books = getBooksByProject(projectId);
@@ -163,8 +187,68 @@ export default function DashboardPage() {
             order: chapter.order,
             beatNumber: chapter.beatNumber,
           });
-        });
+      });
     });
+  };
+
+  const handleExportBackup = (projectId: string) => {
+    const backup = exportProjectBackup(projectId);
+    if (!backup) {
+      toast.error("No se pudo crear el respaldo", {
+        description: "El proyecto ya no está disponible para exportarse.",
+      });
+      return;
+    }
+
+    const serialized = serializeProjectBackup(backup);
+    const file = new Blob([serialized], { type: "application/json" });
+    const url = URL.createObjectURL(file);
+    const downloadLink = document.createElement("a");
+    downloadLink.href = url;
+    downloadLink.download = buildBackupFilename(backup.project.title, backup.exportedAt);
+    document.body.appendChild(downloadLink);
+    downloadLink.click();
+    document.body.removeChild(downloadLink);
+    URL.revokeObjectURL(url);
+
+    toast.success("Respaldo descargado", {
+      description: "Guardaste una copia portable del proyecto en este dispositivo.",
+    });
+  };
+
+  const handleImportBackup = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    setIsImportingBackup(true);
+
+    try {
+      const raw = await file.text();
+      const backup = parseProjectBackup(raw);
+      const importedProject = importProjectBackup(backup);
+
+      if (!importedProject) {
+        throw new Error("No se pudo restaurar el proyecto desde ese archivo.");
+      }
+
+      toast.success("Proyecto restaurado", {
+        description: canPublishProjects
+          ? "La copia ya quedó en Péndola y empezará a sincronizarse con Supabase."
+          : "La copia ya quedó disponible en este navegador.",
+      });
+
+      router.push(makeProjectPath(importedProject));
+    } catch (error) {
+      toast.error("No se pudo importar el respaldo", {
+        description:
+          error instanceof Error
+            ? error.message
+            : "Verifica que el archivo sea un respaldo válido de Péndola.",
+      });
+    } finally {
+      setIsImportingBackup(false);
+      event.target.value = "";
+    }
   };
 
   const handleCopyReadLink = async (projectId: string) => {
@@ -253,6 +337,15 @@ export default function DashboardPage() {
 
       {/* Content */}
       <div className="flex-1 p-4 sm:p-6">
+        <input
+          ref={importBackupInputRef}
+          type="file"
+          accept="application/json,.json,.pendola.json"
+          className="hidden"
+          onChange={(event) => {
+            void handleImportBackup(event);
+          }}
+        />
         {projects.length === 0 ? (
           /* Empty State */
           <div className="flex flex-col items-center justify-center min-h-[60vh] text-center">
@@ -318,9 +411,70 @@ export default function DashboardPage() {
             </div>
           </div>
         ) : (
-          /* Project Grid */
-          <div className="grid grid-cols-1 gap-5 md:grid-cols-2 lg:grid-cols-3">
-            {projects.map((project) => {
+          <div className="space-y-5">
+            <Card className="border-violet-500/15 bg-[radial-gradient(circle_at_top_right,rgba(139,92,246,0.1),transparent_32%),linear-gradient(180deg,rgba(255,255,255,0.98),rgba(248,250,252,0.94))] dark:bg-[radial-gradient(circle_at_top_right,rgba(139,92,246,0.16),transparent_34%),linear-gradient(180deg,rgba(15,23,42,0.92),rgba(15,23,42,0.88))]">
+              <CardHeader className="pb-3">
+                <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                  <div className="space-y-2">
+                    <div className="flex items-center gap-2">
+                      <ShieldCheck className="h-4 w-4 text-violet-500" />
+                      <CardTitle className="text-base">Respaldo y sincronización</CardTitle>
+                    </div>
+                    <CardDescription className="max-w-2xl">
+                      Tus proyectos ya tienen exportación portable y restauración por archivo.
+                      Usa el menú <span className="font-medium text-foreground">⋯</span> de cada proyecto para bajar un respaldo
+                      y este panel para reimportar copias cuando lo necesites.
+                    </CardDescription>
+                  </div>
+                  <Button
+                    variant="outline"
+                    className="rounded-xl"
+                    disabled={isImportingBackup}
+                    onClick={() => importBackupInputRef.current?.click()}
+                  >
+                    <Upload className="mr-2 h-4 w-4" />
+                    {isImportingBackup ? "Importando..." : "Importar respaldo"}
+                  </Button>
+                </div>
+              </CardHeader>
+              <CardContent className="grid gap-3 md:grid-cols-3">
+                <div className="rounded-2xl border bg-background/80 p-4">
+                  <div className="mb-2 flex items-center gap-2 text-sm font-medium">
+                    {canPublishProjects ? (
+                      <Cloud className="h-4 w-4 text-emerald-500" />
+                    ) : (
+                      <Laptop className="h-4 w-4 text-amber-500" />
+                    )}
+                    {canPublishProjects ? "Nube activa" : "Solo este navegador"}
+                  </div>
+                  <p className="text-sm leading-6 text-muted-foreground">
+                    {canPublishProjects
+                      ? "Supabase está conectado y los cambios nuevos se sincronizan en cuanto trabajas."
+                      : "Tus cambios siguen guardándose localmente, pero todavía no salen de este dispositivo."}
+                  </p>
+                </div>
+                <div className="rounded-2xl border bg-background/80 p-4">
+                  <p className="mb-2 text-sm font-medium">Proyectos sincronizados</p>
+                  <p className="text-2xl font-semibold tracking-tight">{syncedProjects}</p>
+                  <p className="mt-1 text-sm text-muted-foreground">
+                    {syncedProjects === 1 ? "Proyecto en nube" : "Proyectos en nube"}
+                  </p>
+                </div>
+                <div className="rounded-2xl border bg-background/80 p-4">
+                  <p className="mb-2 text-sm font-medium">Solo locales</p>
+                  <p className="text-2xl font-semibold tracking-tight">{localOnlyProjects}</p>
+                  <p className="mt-1 text-sm text-muted-foreground">
+                    {localOnlyProjects > 0
+                      ? "Conviene importarlos o editarlos para que suban a Supabase."
+                      : "Todo lo visible aquí ya salió del navegador."}
+                  </p>
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Project Grid */}
+            <div className="grid grid-cols-1 gap-5 md:grid-cols-2 lg:grid-cols-3">
+              {projects.map((project) => {
               const stats = getProjectStats(project.id);
               const projectShare = projectShares.find((share) => share.projectId === project.id);
               const projectBooks = getBooksByProject(project.id);
@@ -379,6 +533,14 @@ export default function DashboardPage() {
                             Desactivar lectura pública
                           </DropdownMenuItem>
                         ) : null}
+                        <DropdownMenuItem
+                          onClick={() => {
+                            handleExportBackup(project.id);
+                          }}
+                        >
+                          <Download className="h-4 w-4" />
+                          Exportar respaldo
+                        </DropdownMenuItem>
                         <DropdownMenuItem
                           onClick={() => {
                             handleDuplicateProject(project.id);
@@ -488,6 +650,14 @@ export default function DashboardPage() {
                       )}
 
                       <div className="flex flex-wrap items-center gap-2 border-t pt-2 text-xs text-muted-foreground">
+                        {project.userId === "local-user" ? (
+                          <Badge
+                            variant="outline"
+                            className="border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-200"
+                          >
+                            Solo en este navegador
+                          </Badge>
+                        ) : null}
                         {projectShare?.isActive ? (
                           <Badge
                             variant="outline"
@@ -528,6 +698,7 @@ export default function DashboardPage() {
                 </div>
               </Card>
             </Link>
+          </div>
           </div>
         )}
       </div>

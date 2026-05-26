@@ -125,7 +125,7 @@ function shouldShowAppendToEndAction(
   message: AIChatMessage,
   workspace?: AIConversationWorkspace
 ) {
-  if (workspace === "editorial") {
+  if (workspace === "editorial" || workspace === "project") {
     return false;
   }
 
@@ -515,6 +515,8 @@ export function AIPanel({
   );
 
   const messages = activeConversation?.messages ?? [];
+  const canApplyToManuscript = workspace !== "project";
+  const canUseCreativeTransforms = !disableCreativeTransforms && workspace !== "project";
   const mode = fixedMode ?? activeConversation?.mode ?? "copiloto";
   const isLoading = activeConversation?.isGenerating ?? false;
   const conversationUsage = useMemo(
@@ -994,11 +996,11 @@ Reglas:
                   ) : null}
                 </div>
               )}
-              {(shouldShowInsertionActions(msg) ||
+              {((canApplyToManuscript && shouldShowInsertionActions(msg)) ||
                 shouldShowContinueGenerating(msg, index, messages, isLoading) ||
                 shouldShowAppendToEndAction(msg, workspace) ||
-                (!disableCreativeTransforms && shouldShowConvertToScene(msg)) ||
-                (!disableCreativeTransforms && shouldShowRewriteAsProse(msg))) &&
+                (canUseCreativeTransforms && shouldShowConvertToScene(msg)) ||
+                (canUseCreativeTransforms && shouldShowRewriteAsProse(msg))) &&
                 msg.content.trim() && (
                 <div className="mt-3 flex flex-wrap gap-2">
                   {shouldShowContinueGenerating(msg, index, messages, isLoading) && (
@@ -1014,55 +1016,61 @@ Reglas:
                     </Button>
                   )}
 
-                  {shouldShowInsertionActions(msg) && (
+                  {canApplyToManuscript && shouldShowInsertionActions(msg) && (
                     <>
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="outline"
-                        className="h-7 text-[11px]"
-                        onClick={() => onReplaceSelection?.(msg.content)}
-                      >
-                        <Replace className="h-3 w-3 mr-1" />
-                        {workspace === "editorial" ? "Aplicar a selección" : "Reemplazar selección"}
-                      </Button>
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="outline"
-                        className="h-7 text-[11px]"
-                        onClick={() => onInsertAtCursor?.(msg.content)}
-                      >
-                        <BetweenHorizonalStart className="h-3 w-3 mr-1" />
-                        {workspace === "editorial" ? "Insertar en cursor" : "Insertar aquí"}
-                      </Button>
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="outline"
-                        className="h-7 text-[11px]"
-                        onClick={() => onAppendToEnd?.(msg.content)}
-                      >
-                        <ArrowDownToLine className="h-3 w-3 mr-1" />
-                        {workspace === "editorial" ? "Añadir al final" : "Enviar al final"}
-                      </Button>
+                      {onReplaceSelection ? (
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          className="h-7 text-[11px]"
+                          onClick={() => onReplaceSelection(msg.content)}
+                        >
+                          <Replace className="h-3 w-3 mr-1" />
+                          {workspace === "editorial" ? "Aplicar a selección" : "Reemplazar selección"}
+                        </Button>
+                      ) : null}
+                      {onInsertAtCursor ? (
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          className="h-7 text-[11px]"
+                          onClick={() => onInsertAtCursor(msg.content)}
+                        >
+                          <BetweenHorizonalStart className="h-3 w-3 mr-1" />
+                          {workspace === "editorial" ? "Insertar en cursor" : "Insertar aquí"}
+                        </Button>
+                      ) : null}
+                      {onAppendToEnd ? (
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          className="h-7 text-[11px]"
+                          onClick={() => onAppendToEnd(msg.content)}
+                        >
+                          <ArrowDownToLine className="h-3 w-3 mr-1" />
+                          {workspace === "editorial" ? "Añadir al final" : "Enviar al final"}
+                        </Button>
+                      ) : null}
                     </>
                   )}
 
-                  {shouldShowAppendToEndAction(msg, workspace) && (
+                  {shouldShowAppendToEndAction(msg, workspace) && onAppendToEnd && (
                     <Button
                       type="button"
                       size="sm"
                       variant="outline"
                       className="h-7 text-[11px]"
-                      onClick={() => onAppendToEnd?.(msg.content)}
+                      onClick={() => onAppendToEnd(msg.content)}
                     >
                       <ArrowDownToLine className="h-3 w-3 mr-1" />
                       Insertar al final
                     </Button>
                   )}
 
-                  {!disableCreativeTransforms && shouldShowConvertToScene(msg) && (
+                  {canUseCreativeTransforms && shouldShowConvertToScene(msg) && (
                     <Button
                       type="button"
                       size="sm"
@@ -1080,7 +1088,7 @@ Reglas:
                     </Button>
                   )}
 
-                  {!disableCreativeTransforms && shouldShowRewriteAsProse(msg) && (
+                  {canUseCreativeTransforms && shouldShowRewriteAsProse(msg) && (
                     <Button
                       type="button"
                       size="sm"

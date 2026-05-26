@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { BookOpen, Clock3 } from "lucide-react";
 import { NarrativeRenderer } from "@/components/editor/narrative-renderer";
+import { PublicReadActions } from "@/components/public/public-read-actions";
 import { Badge } from "@/components/ui/badge";
 import { fetchPublicProjectReadModel } from "@/lib/supabase/public-reader";
 import { getPublicMediaUrl } from "@/lib/supabase/storage";
@@ -101,12 +102,15 @@ export default async function PublicReadProjectPage({
                 ) : null}
               </div>
 
-              <div className="mt-8 flex flex-wrap items-center gap-3 text-sm text-muted-foreground">
+              <div className="mt-8 flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+                <div className="flex flex-wrap items-center gap-3 text-sm text-muted-foreground">
                 {project.genre ? <Badge variant="secondary">{project.genre}</Badge> : null}
                 <span className="inline-flex items-center gap-1.5">
                   <Clock3 className="h-4 w-4" />
                   Actualizado el {formatReadingDate(project.updatedAt)}
                 </span>
+                </div>
+                <PublicReadActions />
               </div>
             </div>
 

@@ -171,14 +171,21 @@ export function AppSidebar() {
                           </SidebarMenuSubItem>
                           <SidebarMenuSubItem>
                             <SidebarMenuSubButton
-                              isActive={
-                                pathname === `${projectPath}/personalizacion` ||
-                                pathname === `${projectPath}/ia`
-                              }
-                              onClick={() => router.push(`${projectPath}/personalizacion`)}
+                              isActive={pathname === `${projectPath}/ia`}
+                              onClick={() => router.push(`${projectPath}/ia`)}
                               className="cursor-pointer"
                             >
                               <Sparkles className="h-3.5 w-3.5" />
+                              <span>Mesa IA</span>
+                            </SidebarMenuSubButton>
+                          </SidebarMenuSubItem>
+                          <SidebarMenuSubItem>
+                            <SidebarMenuSubButton
+                              isActive={pathname === `${projectPath}/personalizacion`}
+                              onClick={() => router.push(`${projectPath}/personalizacion`)}
+                              className="cursor-pointer"
+                            >
+                              <Feather className="h-3.5 w-3.5" />
                               <span>Personalización</span>
                             </SidebarMenuSubButton>
                           </SidebarMenuSubItem>

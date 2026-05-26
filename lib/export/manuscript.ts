@@ -28,9 +28,230 @@ function sanitizeFilenamePart(value: string) {
     .toLowerCase()
 }
 
-export function buildFilename(label: string, format: 'txt' | 'docx' | 'json') {
+export function buildFilename(label: string, format: 'txt' | 'docx' | 'json' | 'html') {
   const safeLabel = sanitizeFilenamePart(label) || 'pendola-export'
   return `${safeLabel}.${format}`
+}
+
+function escapeHtml(value: string) {
+  return value
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#39;')
+}
+
+function buildHtmlShell(input: {
+  title: string
+  eyebrow: string
+  subtitle?: string
+  project: Project
+  body: string
+}) {
+  const authorName = resolveAuthorName(input.project)
+  const premise = input.project.premise?.trim()
+
+  return `<!doctype html>
+<html lang="${escapeHtml(input.project.publicationSettings.language || 'es')}">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>${escapeHtml(input.title)} — ${escapeHtml(input.project.title)}</title>
+    <style>
+      :root {
+        color-scheme: light;
+        --page-bg: #f8f7f3;
+        --card-bg: #fffdfa;
+        --ink: #18181b;
+        --muted: #6b7280;
+        --border: rgba(24, 24, 27, 0.12);
+        --accent: ${input.project.coverColor || '#6d28d9'};
+      }
+
+      * { box-sizing: border-box; }
+
+      body {
+        margin: 0;
+        background:
+          radial-gradient(circle at top, color-mix(in srgb, var(--accent) 18%, white), transparent 26%),
+          var(--page-bg);
+        color: var(--ink);
+        font-family: Georgia, "Times New Roman", serif;
+      }
+
+      main {
+        width: min(100%, 1100px);
+        margin: 0 auto;
+        padding: 32px 18px 80px;
+      }
+
+      .hero,
+      .manuscript {
+        background: var(--card-bg);
+        border: 1px solid var(--border);
+        border-radius: 28px;
+        box-shadow: 0 16px 50px rgba(15, 23, 42, 0.06);
+      }
+
+      .hero {
+        padding: 28px 24px;
+        margin-bottom: 22px;
+      }
+
+      .eyebrow {
+        margin: 0 0 14px;
+        color: var(--muted);
+        font: 600 11px/1.2 ui-sans-serif, system-ui, sans-serif;
+        letter-spacing: 0.18em;
+        text-transform: uppercase;
+      }
+
+      h1 {
+        margin: 0;
+        font-size: clamp(2rem, 4vw, 3.6rem);
+        line-height: 1.02;
+      }
+
+      .subtitle {
+        margin: 14px 0 0;
+        color: var(--muted);
+        font: 500 0.96rem/1.7 ui-sans-serif, system-ui, sans-serif;
+      }
+
+      .premise {
+        margin: 18px 0 0;
+        max-width: 70ch;
+        color: color-mix(in srgb, var(--ink) 80%, white);
+        font-size: 1.02rem;
+        line-height: 1.9;
+      }
+
+      .manuscript {
+        padding: 28px 24px 36px;
+      }
+
+      .chapter-break {
+        margin: 42px 0;
+        border: 0;
+        border-top: 1px solid var(--border);
+      }
+
+      .chapter-label {
+        margin: 0 0 12px;
+        color: var(--muted);
+        font: 600 11px/1.2 ui-sans-serif, system-ui, sans-serif;
+        letter-spacing: 0.16em;
+        text-transform: uppercase;
+      }
+
+      .chapter-title {
+        margin: 0 0 24px;
+        font-size: clamp(1.65rem, 2.6vw, 2.35rem);
+        line-height: 1.12;
+      }
+
+      .tiptap {
+        max-width: 86ch;
+        margin: 0 auto;
+        font-size: 20px;
+        line-height: 1.9;
+        text-wrap: pretty;
+        text-rendering: optimizeLegibility;
+      }
+
+      .tiptap p { margin: 0 0 1.15em; }
+      .tiptap h1 { margin: 1.6em 0 0.7em; font-size: 1.8em; line-height: 1.12; }
+      .tiptap h2 { margin: 1.45em 0 0.65em; font-size: 1.45em; line-height: 1.16; }
+      .tiptap h3 { margin: 1.3em 0 0.6em; font-size: 1.2em; line-height: 1.18; }
+      .tiptap ul, .tiptap ol { margin: 0 0 1.15em 1.4em; }
+      .tiptap li { margin: 0.3em 0; }
+      .tiptap blockquote {
+        margin: 1.6em 0;
+        padding-left: 1rem;
+        border-left: 3px solid var(--accent);
+        opacity: 0.88;
+        font-style: italic;
+      }
+      .tiptap hr {
+        margin: 2em 0;
+        border: 0;
+        border-top: 1px solid var(--border);
+      }
+      .tiptap mark {
+        padding: 0.05em 0.22em;
+        border-radius: 0.25rem;
+        background: rgba(250, 204, 21, 0.25);
+      }
+      .tiptap img {
+        display: block;
+        width: 80%;
+        max-width: 100%;
+        height: auto;
+        margin: 1.1rem auto;
+        border-radius: 12px;
+      }
+      .tiptap img[data-image-size="sm"] { width: 40%; }
+      .tiptap img[data-image-size="md"] { width: 60%; }
+      .tiptap img[data-image-size="lg"] { width: 80%; }
+      .tiptap img[data-image-size="full"] { width: 100%; }
+      .tiptap img[data-image-align="left"] { margin-left: 0; margin-right: auto; }
+      .tiptap img[data-image-align="center"] { margin-left: auto; margin-right: auto; }
+      .tiptap img[data-image-align="right"] { margin-left: auto; margin-right: 0; }
+      .tiptap .entity-mention,
+      .tiptap[data-plain-mentions="true"] .entity-mention {
+        padding: 0;
+        border: 0;
+        border-radius: 0;
+        background: transparent !important;
+        color: inherit !important;
+        box-shadow: none !important;
+      }
+
+      @media print {
+        body { background: white; }
+        main { width: 100%; max-width: none; padding: 0; }
+        .hero, .manuscript { border: 0; box-shadow: none; border-radius: 0; }
+        .hero { padding: 0 0 24px; }
+        .manuscript { padding: 0; }
+      }
+
+      @media (max-width: 768px) {
+        main { padding: 18px 12px 48px; }
+        .hero, .manuscript { border-radius: 22px; }
+        .hero, .manuscript { padding-left: 16px; padding-right: 16px; }
+        .tiptap { font-size: 18px; }
+        .tiptap img[data-image-size="sm"] { width: 75%; }
+        .tiptap img[data-image-size="md"] { width: 85%; }
+        .tiptap img[data-image-size="lg"],
+        .tiptap img[data-image-size="full"] { width: 100%; }
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <section class="hero">
+        <p class="eyebrow">${escapeHtml(input.eyebrow)}</p>
+        <h1>${escapeHtml(input.title)}</h1>
+        ${input.subtitle ? `<p class="subtitle">${escapeHtml(input.subtitle)}</p>` : ''}
+        ${premise ? `<p class="premise">${escapeHtml(premise)}</p>` : ''}
+        <p class="subtitle">${escapeHtml(authorName)}</p>
+      </section>
+      <section class="manuscript">${input.body}</section>
+    </main>
+  </body>
+</html>`
+}
+
+function renderHtmlChapter(project: Project, chapter: ExportChapterLike, index?: number) {
+  return `
+    ${typeof index === 'number' && index > 0 ? '<hr class="chapter-break" />' : ''}
+    <article>
+      <p class="chapter-label">Capítulo</p>
+      <h2 class="chapter-title">${escapeHtml(chapter.title.trim() || 'Capítulo sin título')}</h2>
+      <div class="tiptap" data-plain-mentions="true">${chapter.content?.trim() || '<p><em>(Sin contenido todavía)</em></p>'}</div>
+    </article>
+  `
 }
 
 function resolveAuthorName(project: Project) {
@@ -96,6 +317,43 @@ export function buildBookTextExport({
       return `${separator}${chapterToPlainText(project, chapter)}`
     }),
   ].join('\n')
+}
+
+export function buildChapterHtmlExport(options: {
+  project: Project
+  bookTitle: string
+  chapter: Chapter | EditorialDraft
+  chapterTitle?: string
+  workspaceLabel: string
+}) {
+  const title = options.chapterTitle || ('title' in options.chapter ? options.chapter.title : 'Capítulo')
+
+  return buildHtmlShell({
+    title,
+    eyebrow: `${options.project.title} · ${options.workspaceLabel}`,
+    subtitle: options.bookTitle,
+    project: options.project,
+    body: renderHtmlChapter(options.project, {
+      title,
+      content: options.chapter.content,
+      wordCount: options.chapter.wordCount,
+    }),
+  })
+}
+
+export function buildBookHtmlExport({
+  project,
+  bookTitle,
+  chapters,
+  workspaceLabel,
+}: ExportBookOptions) {
+  return buildHtmlShell({
+    title: bookTitle,
+    eyebrow: `${project.title} · ${workspaceLabel}`,
+    subtitle: `${chapters.length} ${chapters.length === 1 ? 'capítulo' : 'capítulos'}`,
+    project,
+    body: chapters.map((chapter, index) => renderHtmlChapter(project, chapter, index)).join('\n'),
+  })
 }
 
 function chapterToParagraphs(project: Project, chapter: ExportChapterLike) {

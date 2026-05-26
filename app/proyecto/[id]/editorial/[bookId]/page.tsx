@@ -57,14 +57,22 @@ import { buildNarrativeContext } from "@/lib/ai/context";
 import { buildAIRequestConfig } from "@/lib/ai/provider";
 import {
   buildBookTextExport,
+  buildBookHtmlExport,
   buildChapterTextExport,
+  buildChapterHtmlExport,
   buildFilename,
   downloadBlob,
   downloadText,
   exportBookAsDocx,
   exportChapterAsDocx,
 } from "@/lib/export/manuscript";
-import { consumeRecoveryNotice, setRecoveryNotice } from "@/lib/persistence/recovery";
+import { consumeRecoveryNotice, setRecoveryNotice, type RecoveryNotice } from "@/lib/persistence/recovery";
+import {
+  formatRelativeWorkspaceTime,
+  loadWorkspaceResumeState,
+  saveWorkspaceResumeState,
+  type WorkspaceResumeState,
+} from "@/lib/persistence/workspace-session";
 import { PENDOLA_STORAGE_ERROR_EVENT } from "@/lib/persistence/storage-adapter";
 import {
   makeEditorialBookPath,
@@ -248,6 +256,9 @@ export default function EditorialBookPage({ params }: PageProps) {
     id: string;
     prompt: string;
   } | null>(null);
+  const [resumeState, setResumeState] = useState<WorkspaceResumeState | null>(null);
+  const [autoResumedChapterId, setAutoResumedChapterId] = useState<string | null>(null);
+  const [recentRecoveryNotice, setRecentRecoveryNotice] = useState<RecoveryNotice | null>(null);
 
   const projectId = resolveEntityId(
     projectSegment,
@@ -265,6 +276,8 @@ export default function EditorialBookPage({ params }: PageProps) {
   const scenarios = getScenariosByProject(projectId);
   const resources = getResourcesByProject(projectId);
   const bookEditorialDrafts = editorialDrafts.filter((draft) => draft.bookId === bookId);
+  const workspaceSessionKey =
+    projectId && bookId ? `pendola:workspace:editorial:${projectId}:${bookId}` : null;
 
   useEffect(() => {
     if (project) {
@@ -278,6 +291,24 @@ export default function EditorialBookPage({ params }: PageProps) {
       projectTitleInputRef.current?.select();
     }
   }, [isEditingProjectTitle]);
+
+  useEffect(() => {
+    if (!workspaceSessionKey) return;
+    setResumeState(loadWorkspaceResumeState(workspaceSessionKey));
+  }, [workspaceSessionKey]);
+
+  useEffect(() => {
+    if (!workspaceSessionKey || selectedChapterId || chapters.length === 0) return;
+
+    const storedSession = loadWorkspaceResumeState(workspaceSessionKey);
+    if (!storedSession) return;
+
+    if (chapters.some((chapter) => chapter.id === storedSession.chapterId)) {
+      setSelectedChapterId(storedSession.chapterId);
+      setAutoResumedChapterId(storedSession.chapterId);
+      setResumeState(storedSession);
+    }
+  }, [chapters, selectedChapterId, workspaceSessionKey]);
 
   const effectiveSelectedChapterId =
     selectedChapterId && chapters.some((chapter) => chapter.id === selectedChapterId)
@@ -296,6 +327,8 @@ export default function EditorialBookPage({ params }: PageProps) {
   const chapterSnapshots = selectedChapter
     ? getChapterSnapshotsByChapter(selectedChapter.id, "editorial")
     : [];
+  const latestEditorialSavedAt = selectedDraft?.updatedAt ?? resumeState?.lastSavedAt;
+  const latestEditorialSnapshotAt = chapterSnapshots[0]?.createdAt;
 
   const totalEditorialWords = bookEditorialDrafts.reduce(
     (sum, draft) => sum + draft.wordCount,
@@ -323,6 +356,26 @@ export default function EditorialBookPage({ params }: PageProps) {
   const aiConfig = buildAIRequestConfig(aiSettings);
   const projectPath = project ? makeProjectPath(project) : null;
   const editorialSystemPrompt = buildEditorialSystemPrompt(project?.editorialInstructions);
+
+  useEffect(() => {
+    if (!workspaceSessionKey || !selectedChapter) return;
+
+    const nextSession: WorkspaceResumeState = {
+      chapterId: selectedChapter.id,
+      chapterTitle: selectedChapter.title || "Capítulo sin título",
+      lastVisitedAt: new Date().toISOString(),
+      lastSavedAt: selectedDraft?.updatedAt ?? selectedChapter.updatedAt,
+    };
+
+    saveWorkspaceResumeState(workspaceSessionKey, nextSession);
+    setResumeState(nextSession);
+  }, [
+    selectedChapter?.id,
+    selectedChapter?.title,
+    selectedChapter?.updatedAt,
+    selectedDraft?.updatedAt,
+    workspaceSessionKey,
+  ]);
 
   const commitProjectTitle = () => {
     if (!project) return;
@@ -366,6 +419,7 @@ export default function EditorialBookPage({ params }: PageProps) {
       persistPendingDraft("chapter_switch");
     }
     setSelectedChapterId(chapterId);
+    setAutoResumedChapterId((current) => (current === chapterId ? current : null));
     setSaveState("saved");
   };
 
@@ -533,6 +587,7 @@ export default function EditorialBookPage({ params }: PageProps) {
   useEffect(() => {
     const recoveryNotice = consumeRecoveryNotice();
     if (recoveryNotice?.workspace === "editorial") {
+      setRecentRecoveryNotice(recoveryNotice);
       toast.success("Recuperación editorial aplicada", {
         description: `Se restauró el último guardado automático de “${recoveryNotice.chapterTitle}”.`,
       });
@@ -643,6 +698,26 @@ export default function EditorialBookPage({ params }: PageProps) {
     toast.success("Capítulo editorial exportado en TXT");
   };
 
+  const handleExportEditorialChapterHtml = () => {
+    if (!project || !book || !selectedChapter || !selectedDraft) return;
+
+    const content = buildChapterHtmlExport({
+      project,
+      bookTitle: book.title,
+      chapter: selectedDraft,
+      chapterTitle: selectedChapter.title,
+      workspaceLabel: "Editorial",
+    });
+    downloadText(
+      content,
+      buildFilename(`${project.title}-${selectedChapter.title}-editorial`, "html"),
+      "text/html;charset=utf-8"
+    );
+    toast.success("Capítulo editorial exportado en HTML", {
+      description: "Conserva mejor la composición para leerlo, imprimirlo o guardarlo en PDF.",
+    });
+  };
+
   const handleExportEditorialBookTxt = () => {
     if (!project || !book) return;
 
@@ -664,6 +739,37 @@ export default function EditorialBookPage({ params }: PageProps) {
     });
     downloadText(content, buildFilename(`${project.title}-${book.title}-editorial`, "txt"));
     toast.success("Libro editorial exportado en TXT");
+  };
+
+  const handleExportEditorialBookHtml = () => {
+    if (!project || !book) return;
+
+    const content = buildBookHtmlExport({
+      project,
+      book,
+      bookTitle: book.title,
+      chapters: chapters
+        .map((chapter) => {
+          const draft = getEditorialDraftByChapter(chapter.id);
+          if (!draft) return null;
+          return {
+            title: chapter.title,
+            content: draft.content,
+            wordCount: draft.wordCount,
+          };
+        })
+        .filter(Boolean) as Array<{ title: string; content: string; wordCount: number }>,
+      workspaceLabel: "Editorial",
+      publicationProfile: project.publicationSettings.targetProfile,
+    });
+    downloadText(
+      content,
+      buildFilename(`${project.title}-${book.title}-editorial`, "html"),
+      "text/html;charset=utf-8"
+    );
+    toast.success("Libro editorial exportado en HTML", {
+      description: "Úsalo como salida visual más fiel para revisión externa o PDF final intermedio.",
+    });
   };
 
   const handleExportEditorialChapterDocx = async () => {
@@ -947,6 +1053,11 @@ export default function EditorialBookPage({ params }: PageProps) {
                       <Badge variant="outline" className="rounded-full px-2.5 py-0.5 text-[10px]">
                         {book.title}
                       </Badge>
+                      {autoResumedChapterId === selectedChapter.id ? (
+                        <Badge variant="outline" className="rounded-full px-2.5 py-0.5 text-[10px]">
+                          Retomado
+                        </Badge>
+                      ) : null}
                       <span>{chapters.length} capítulos</span>
                       <span>•</span>
                       <span>{totalEditorialWords} palabras editoriales</span>
@@ -966,6 +1077,55 @@ export default function EditorialBookPage({ params }: PageProps) {
                         ? "Esta versión editorial vive aparte del borrador. Usa acciones rápidas para corregir con criterio RAE práctico o abre el prompt libre en el panel derecho para un ajuste más específico."
                         : "Crea una copia editorial desde Escribir para empezar a corregir este capítulo sin tocar el manuscrito base."}
                     </p>
+                    <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                      <span>Último guardado {formatRelativeWorkspaceTime(latestEditorialSavedAt)}</span>
+                      <span>•</span>
+                      <span>
+                        {chapterSnapshots.length === 1
+                          ? "1 versión reciente"
+                          : `${chapterSnapshots.length} versiones recientes`}
+                      </span>
+                      {latestEditorialSnapshotAt ? (
+                        <>
+                          <span>•</span>
+                          <span>último snapshot {formatRelativeWorkspaceTime(latestEditorialSnapshotAt)}</span>
+                        </>
+                      ) : null}
+                    </div>
+                    {recentRecoveryNotice?.workspace === "editorial" &&
+                    recentRecoveryNotice.chapterId === selectedChapter.id ? (
+                      <div className="mt-4 rounded-2xl border border-emerald-500/25 bg-emerald-500/8 px-4 py-3">
+                        <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                          <div>
+                            <p className="text-sm font-medium">
+                              Se recuperó tu último guardado editorial
+                            </p>
+                            <p className="mt-1 text-xs leading-5 text-muted-foreground">
+                              {recentRecoveryNotice.chapterTitle} · {formatRelativeWorkspaceTime(recentRecoveryNotice.savedAt)}
+                            </p>
+                          </div>
+                          <div className="flex flex-wrap gap-2">
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="rounded-xl"
+                              onClick={() => setVersionsOpen(true)}
+                            >
+                              <History className="mr-2 h-4 w-4" />
+                              Ver versiones
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="rounded-xl"
+                              onClick={() => setRecentRecoveryNotice(null)}
+                            >
+                              Entendido
+                            </Button>
+                          </div>
+                        </div>
+                      </div>
+                    ) : null}
                     {selectedDraft && (
                       <div className="mt-5 rounded-2xl border bg-card/50 p-4">
                         <div className="flex flex-wrap items-center justify-between gap-3">
@@ -1209,7 +1369,19 @@ export default function EditorialBookPage({ params }: PageProps) {
             </div>
 
             <div className="shrink-0 border-t bg-background/80 px-6 py-2 text-[11px] text-muted-foreground md:px-8">
-              {saveCopy[saveState]}
+              <div className="flex flex-col gap-1 md:flex-row md:items-center md:justify-between">
+                <span>{saveCopy[saveState]}</span>
+                {selectedChapter ? (
+                  <span>
+                    Último guardado {formatRelativeWorkspaceTime(latestEditorialSavedAt)}
+                    {chapterSnapshots.length > 0
+                      ? ` · ${chapterSnapshots.length} ${
+                          chapterSnapshots.length === 1 ? "snapshot" : "snapshots"
+                        }`
+                      : " · sin snapshots todavía"}
+                  </span>
+                ) : null}
+              </div>
             </div>
           </div>
 
@@ -1389,6 +1561,33 @@ export default function EditorialBookPage({ params }: PageProps) {
               <span className="font-medium">Libro editorial · TXT</span>
               <span className="mt-1 text-xs text-muted-foreground">
                 Solo se incluyen capítulos que ya tienen copia editorial creada.
+              </span>
+            </Button>
+            <Button
+              variant="outline"
+              className="h-auto flex-col items-start rounded-2xl px-4 py-4 text-left"
+              onClick={() => {
+                handleExportEditorialChapterHtml();
+                setExportOpen(false);
+              }}
+              disabled={!selectedDraft}
+            >
+              <span className="font-medium">Capítulo editorial · HTML</span>
+              <span className="mt-1 text-xs text-muted-foreground">
+                Conserva mejor estructura, imágenes y ritmo visual de la versión editorial.
+              </span>
+            </Button>
+            <Button
+              variant="outline"
+              className="h-auto flex-col items-start rounded-2xl px-4 py-4 text-left"
+              onClick={() => {
+                handleExportEditorialBookHtml();
+                setExportOpen(false);
+              }}
+            >
+              <span className="font-medium">Libro editorial · HTML</span>
+              <span className="mt-1 text-xs text-muted-foreground">
+                Salida más fiel para compartir, revisar en navegador o convertir a PDF.
               </span>
             </Button>
           </div>

@@ -1,4 +1,13 @@
-import type { Book, Chapter, Character, EditorialDraft, Project, Resource, Scenario } from "@/lib/types";
+import type {
+  AIConversationWorkspace,
+  Book,
+  Chapter,
+  Character,
+  EditorialDraft,
+  Project,
+  Resource,
+  Scenario,
+} from "@/lib/types";
 import { buildCharacterTraitSummary } from "@/lib/characters/archetypes";
 
 const MAX_SECTION_LENGTH = 1600;
@@ -6,6 +15,9 @@ const MAX_CHAPTER_SNIPPET = 2200;
 const MAX_RESOURCE_SNIPPET = 1400;
 const MAX_RESOURCE_SECTION_LENGTH = 5200;
 const MAX_HEURISTIC_CHAPTERS = 4;
+const MAX_PROJECT_SUMMARY_LENGTH = 22_000;
+const MAX_PROJECT_AUDIT_LENGTH = 48_000;
+const MAX_PROJECT_FULLTEXT_CHARS = 28_000;
 
 function collapseWhitespace(value: string) {
   return value.replace(/\s+/g, " ").trim();
@@ -220,7 +232,7 @@ export interface NarrativeContextInput {
   scenarios?: Scenario[];
   resources?: Resource[];
   mode?: string;
-  workspace?: "writing" | "editorial";
+  workspace?: AIConversationWorkspace;
   queryText?: string;
 }
 
@@ -323,4 +335,211 @@ export function buildNarrativeContext({
   ].filter(Boolean);
 
   return sections.join("\n");
+}
+
+export type ProjectContextMode = "summary" | "full_audit";
+
+export interface ProjectContextInput {
+  project: Project;
+  books?: Book[];
+  chapters?: Chapter[];
+  characters?: Character[];
+  scenarios?: Scenario[];
+  resources?: Resource[];
+  queryText?: string;
+  mode?: ProjectContextMode;
+}
+
+function sortBooks(books: Book[]) {
+  return [...books].sort((a, b) => a.order - b.order || a.title.localeCompare(b.title));
+}
+
+function sortChaptersForProject(books: Book[], chapters: Chapter[]) {
+  const bookOrder = new Map(books.map((book, index) => [book.id, index]));
+
+  return [...chapters].sort((a, b) => {
+    const byBook = (bookOrder.get(a.bookId) ?? Number.MAX_SAFE_INTEGER) - (bookOrder.get(b.bookId) ?? Number.MAX_SAFE_INTEGER);
+    if (byBook !== 0) return byBook;
+    return a.order - b.order || a.title.localeCompare(b.title);
+  });
+}
+
+function buildChapterOutlineLine(chapter: Chapter, plainText: string, bookTitle?: string) {
+  const wordCount = chapter.wordCount || countWordsFromContent(chapter.content);
+  const summary = trimSection(plainText || "Capítulo todavía sin contenido desarrollado.", 260);
+  const heading = bookTitle
+    ? `${bookTitle} · Capítulo ${chapter.order}: ${chapter.title}`
+    : `Capítulo ${chapter.order}: ${chapter.title}`;
+
+  return `${heading} (${wordCount} palabras): ${summary}`;
+}
+
+function trimJoinedSections(value: string, maxLength: number) {
+  if (value.length <= maxLength) return value;
+  return `${value.slice(0, maxLength).trim()}\n…`;
+}
+
+export function resolveProjectContextMode(queryText: string) {
+  const normalized = queryText.toLowerCase();
+
+  if (
+    [
+      "audita todo el proyecto",
+      "auditar todo el proyecto",
+      "buscar incongruencias",
+      "detectar huecos de guion",
+      "revisar continuidad",
+      "revisar lógica del mundo",
+      "revisar ritmo",
+      "progresión del conflicto",
+      "incongruencias",
+      "contradicciones",
+      "huecos de guion",
+      "agujeros de guion",
+      "leer todo el proyecto",
+      "lee todo el proyecto",
+      "proyecto completo",
+      "continuidad global",
+    ].some((signal) => normalized.includes(signal))
+  ) {
+    return "full_audit" as const;
+  }
+
+  return "summary" as const;
+}
+
+export function buildProjectContext({
+  project,
+  books = [],
+  chapters = [],
+  characters = [],
+  scenarios = [],
+  resources = [],
+  queryText = "",
+  mode = "summary",
+}: ProjectContextInput) {
+  const orderedBooks = sortBooks(books);
+  const orderedChapters = sortChaptersForProject(orderedBooks, chapters);
+  const bookMap = new Map(orderedBooks.map((book) => [book.id, book]));
+
+  const chapterOutlines = orderedChapters.map((chapter) => {
+    const plainText = htmlToPlainText(chapter.content);
+    const bookTitle = bookMap.get(chapter.bookId)?.title;
+    return buildChapterOutlineLine(chapter, plainText, bookTitle);
+  });
+
+  const chaptersByBook = orderedBooks
+    .map((book) => {
+      const chapterList = orderedChapters.filter((chapter) => chapter.bookId === book.id);
+      if (chapterList.length === 0) {
+        return `Libro ${book.order}: ${book.title}\nSin capítulos todavía.`;
+      }
+
+      const lines = chapterList.map((chapter) => {
+        const plainText = htmlToPlainText(chapter.content);
+        return `- Capítulo ${chapter.order}: ${chapter.title} (${chapter.wordCount || countWordsFromContent(chapter.content)} palabras)`;
+      });
+
+      return `Libro ${book.order}: ${book.title}\n${lines.join("\n")}`;
+    })
+    .join("\n\n");
+
+  const projectSummarySections = [
+    "PANORAMA DEL PROYECTO",
+    `Proyecto: ${project.title}`,
+    project.genre ? `Género: ${project.genre}` : null,
+    project.premise ? `Premisa: ${trimSection(project.premise, MAX_SECTION_LENGTH)}` : null,
+    project.theme ? `Tema: ${trimSection(project.theme, 420)}` : null,
+    project.antiTheme ? `Antitema: ${trimSection(project.antiTheme, 420)}` : null,
+    project.creativeProfile
+      ? `Memoria creativa global: ${trimSection(project.creativeProfile, MAX_SECTION_LENGTH)}`
+      : null,
+    project.aiInstructions
+      ? `Instrucciones globales para la IA: ${trimSection(project.aiInstructions, MAX_SECTION_LENGTH)}`
+      : null,
+    project.editorialInstructions
+      ? `Criterio editorial del proyecto: ${trimSection(project.editorialInstructions, MAX_SECTION_LENGTH)}`
+      : null,
+    queryText ? `Consulta actual del autor: ${trimSection(queryText, 800)}` : null,
+    "",
+    "MAPA DE LIBROS Y CAPÍTULOS",
+    chaptersByBook || "Todavía no hay libros o capítulos en el proyecto.",
+    "",
+    "RESUMEN POR CAPÍTULO",
+    chapterOutlines.length > 0 ? chapterOutlines.join("\n") : "No hay capítulos con contenido todavía.",
+    "",
+    "PERSONAJES",
+    characters.length > 0
+      ? characters.map(buildCharacterSummary).join("\n")
+      : "No hay personajes cargados todavía.",
+    "",
+    "ESCENARIOS",
+    scenarios.length > 0
+      ? scenarios.map(buildScenarioSummary).join("\n")
+      : "No hay escenarios cargados todavía.",
+    "",
+    "RECURSOS Y DOCUMENTACIÓN",
+    buildResourcesSection(resources),
+    "",
+    "INSTRUCCIONES DE USO",
+    mode === "full_audit"
+      ? "Estás haciendo una auditoría narrativa profunda del proyecto. Prioriza contradicciones, huecos causales, continuidad, motivaciones y progresión dramática."
+      : "Estás conversando sobre el proyecto de forma global. Usa este contexto para responder sin mezclarlo con otros proyectos.",
+    "Nunca inventes que conoces información de otro proyecto. Todo lo que uses debe provenir de este contexto.",
+  ].filter(Boolean);
+
+  if (mode === "summary") {
+    return trimJoinedSections(projectSummarySections.join("\n"), MAX_PROJECT_SUMMARY_LENGTH);
+  }
+
+  const fullTextSections: string[] = [];
+  const chapterSummariesForOverflow: string[] = [];
+  let consumedFullText = 0;
+  let fullyIncludedChapters = 0;
+
+  orderedChapters.forEach((chapter) => {
+    const plainText = htmlToPlainText(chapter.content);
+    const book = bookMap.get(chapter.bookId);
+    const fullTextSection = [
+      `Libro ${book?.order ?? "?"}: ${book?.title ?? "Sin libro"}`,
+      `Capítulo ${chapter.order}: ${chapter.title}`,
+      plainText || "Capítulo sin texto todavía.",
+    ].join("\n");
+
+    if (consumedFullText + fullTextSection.length <= MAX_PROJECT_FULLTEXT_CHARS) {
+      fullTextSections.push(fullTextSection);
+      consumedFullText += fullTextSection.length;
+      fullyIncludedChapters += 1;
+      return;
+    }
+
+    chapterSummariesForOverflow.push(
+      buildChapterOutlineLine(chapter, plainText, book?.title)
+    );
+  });
+
+  const degradationNote =
+    chapterSummariesForOverflow.length === 0
+      ? "Se incluyó el texto completo de todos los capítulos disponibles dentro del presupuesto de contexto."
+      : `El proyecto excede el contexto cómodo. Se incluyó texto completo de ${fullyIncludedChapters} de ${orderedChapters.length} capítulos y resumen del resto para no truncar el proyecto de forma opaca.`;
+
+  const auditSections = [
+    ...projectSummarySections,
+    "",
+    "COBERTURA DE LA AUDITORÍA",
+    degradationNote,
+    "",
+    "TEXTO COMPLETO INCLUIDO",
+    fullTextSections.length > 0 ? fullTextSections.join("\n\n") : "No hubo capítulos con texto suficiente para incluir completos.",
+    chapterSummariesForOverflow.length > 0 ? "" : null,
+    chapterSummariesForOverflow.length > 0 ? "CAPÍTULOS RESUMIDOS POR LÍMITE DE CONTEXTO" : null,
+    chapterSummariesForOverflow.length > 0 ? chapterSummariesForOverflow.join("\n") : null,
+    "",
+    "FORMATO DE RESPUESTA ESPERADO",
+    "Devuelve hallazgos con estas secciones: Hallazgos críticos, Incongruencias o contradicciones, Huecos de causalidad, Personajes con motivación débil o inconsistente, Preguntas abiertas que el texto deja sin resolver y Recomendaciones concretas.",
+    "Por defecto entrega solo un bloque corto, con hasta 3 hallazgos prioritarios. No intentes cubrir todo el proyecto en una sola respuesta salvo que el usuario lo pida explícitamente.",
+    "Cuando detectes un problema, cita el libro, el capítulo y el personaje o escenario implicado si es posible.",
+  ].filter(Boolean);
+
+  return trimJoinedSections(auditSections.join("\n"), MAX_PROJECT_AUDIT_LENGTH);
 }

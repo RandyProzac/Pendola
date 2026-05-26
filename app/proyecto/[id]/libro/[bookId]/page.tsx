@@ -89,7 +89,9 @@ import { buildNarrativeContext } from "@/lib/ai/context";
 import { buildAIRequestConfig } from "@/lib/ai/provider";
 import {
   buildBookTextExport,
+  buildBookHtmlExport,
   buildChapterTextExport,
+  buildChapterHtmlExport,
   buildFilename,
   downloadBackup,
   downloadBlob,
@@ -98,7 +100,13 @@ import {
   exportChapterAsDocx,
 } from "@/lib/export/manuscript";
 import { parseProjectBackup } from "@/lib/persistence/project-backup";
-import { consumeRecoveryNotice, setRecoveryNotice } from "@/lib/persistence/recovery";
+import { consumeRecoveryNotice, setRecoveryNotice, type RecoveryNotice } from "@/lib/persistence/recovery";
+import {
+  formatRelativeWorkspaceTime,
+  loadWorkspaceResumeState,
+  saveWorkspaceResumeState,
+  type WorkspaceResumeState,
+} from "@/lib/persistence/workspace-session";
 import { PENDOLA_STORAGE_ERROR_EVENT } from "@/lib/persistence/storage-adapter";
 import { estimatePageRange, getTrimSizeOption } from "@/lib/publishing";
 import { makeBookPath, makeProjectPath, resolveEntityId } from "@/lib/routing";
@@ -299,6 +307,9 @@ export default function BookPage({ params }: PageProps) {
   } | null>(null);
   const [selectionMenuReady, setSelectionMenuReady] = useState(false);
   const [linkDialogType, setLinkDialogType] = useState<EntityMentionType | null>(null);
+  const [resumeState, setResumeState] = useState<WorkspaceResumeState | null>(null);
+  const [autoResumedChapterId, setAutoResumedChapterId] = useState<string | null>(null);
+  const [recentRecoveryNotice, setRecentRecoveryNotice] = useState<RecoveryNotice | null>(null);
 
   const projectId = resolveEntityId(
     projectSegment,
@@ -318,6 +329,8 @@ export default function BookPage({ params }: PageProps) {
     !!path && resources.some((resource) => resource.mediaPath === path);
   const headerPreferenceKey =
     projectId && bookId ? `pendola:writing-header-collapsed:v2:${projectId}:${bookId}` : null;
+  const workspaceSessionKey =
+    projectId && bookId ? `pendola:workspace:writing:${projectId}:${bookId}` : null;
 
   useEffect(() => {
     if (project) {
@@ -338,6 +351,24 @@ export default function BookPage({ params }: PageProps) {
     const storedValue = window.localStorage.getItem(headerPreferenceKey);
     setIsHeaderCollapsed(storedValue === null ? true : storedValue === "true");
   }, [headerPreferenceKey]);
+
+  useEffect(() => {
+    if (!workspaceSessionKey) return;
+    setResumeState(loadWorkspaceResumeState(workspaceSessionKey));
+  }, [workspaceSessionKey]);
+
+  useEffect(() => {
+    if (!workspaceSessionKey || selectedChapterId || chapters.length === 0) return;
+
+    const storedSession = loadWorkspaceResumeState(workspaceSessionKey);
+    if (!storedSession) return;
+
+    if (chapters.some((chapter) => chapter.id === storedSession.chapterId)) {
+      setSelectedChapterId(storedSession.chapterId);
+      setAutoResumedChapterId(storedSession.chapterId);
+      setResumeState(storedSession);
+    }
+  }, [chapters, selectedChapterId, workspaceSessionKey]);
 
   useEffect(() => {
     if (!headerPreferenceKey) return;
@@ -386,6 +417,22 @@ export default function BookPage({ params }: PageProps) {
   const chapterSnapshots = selectedChapter
     ? getChapterSnapshotsByChapter(selectedChapter.id, "writing")
     : [];
+  const latestWritingSavedAt = selectedChapter?.updatedAt ?? resumeState?.lastSavedAt;
+  const latestSnapshotAt = chapterSnapshots[0]?.createdAt;
+
+  useEffect(() => {
+    if (!workspaceSessionKey || !selectedChapter) return;
+
+    const nextSession: WorkspaceResumeState = {
+      chapterId: selectedChapter.id,
+      chapterTitle: selectedChapter.title || "Capítulo sin título",
+      lastVisitedAt: new Date().toISOString(),
+      lastSavedAt: selectedChapter.updatedAt,
+    };
+
+    saveWorkspaceResumeState(workspaceSessionKey, nextSession);
+    setResumeState(nextSession);
+  }, [selectedChapter?.id, selectedChapter?.title, selectedChapter?.updatedAt, workspaceSessionKey]);
 
   const buildWritingContext = useCallback(
     (queryText = "") =>
@@ -669,6 +716,7 @@ export default function BookPage({ params }: PageProps) {
       persistPendingDraft("chapter_switch");
     }
     setSelectedChapterId(chapterId);
+    setAutoResumedChapterId((current) => (current === chapterId ? current : null));
     setSaveState("saved");
     setViewMode("write");
   };
@@ -829,6 +877,7 @@ export default function BookPage({ params }: PageProps) {
   useEffect(() => {
     const recoveryNotice = consumeRecoveryNotice();
     if (recoveryNotice?.workspace === "writing") {
+      setRecentRecoveryNotice(recoveryNotice);
       toast.success("Recuperación local aplicada", {
         description: `Se restauró el último guardado automático de “${recoveryNotice.chapterTitle}”.`,
       });
@@ -927,6 +976,22 @@ export default function BookPage({ params }: PageProps) {
     toast.success("Capítulo exportado en TXT");
   };
 
+  const handleExportChapterHtml = () => {
+    if (!project || !book || !selectedChapter) return;
+
+    const content = buildChapterHtmlExport({
+      project,
+      bookTitle: book.title,
+      chapter: selectedChapter,
+      chapterTitle: selectedChapter.title,
+      workspaceLabel: "Escribir",
+    });
+    downloadText(content, buildFilename(`${project.title}-${selectedChapter.title}`, "html"), "text/html;charset=utf-8");
+    toast.success("Capítulo exportado en HTML", {
+      description: "Conserva mejor estructura, estilos e imágenes para leer, imprimir o mover fuera de Péndola.",
+    });
+  };
+
   const handleExportBookTxt = () => {
     if (!project || !book) return;
 
@@ -942,6 +1007,27 @@ export default function BookPage({ params }: PageProps) {
     });
     downloadText(content, buildFilename(`${project.title}-${book.title}`, "txt"));
     toast.success("Libro exportado en TXT");
+  };
+
+  const handleExportBookHtml = () => {
+    if (!project || !book) return;
+
+    const content = buildBookHtmlExport({
+      project,
+      book,
+      bookTitle: book.title,
+      chapters: chapters.map((chapter) => ({
+        title: chapter.title,
+        content: chapter.content,
+        wordCount: chapter.wordCount,
+      })),
+      workspaceLabel: "Escribir",
+      publicationProfile: project.publicationSettings.targetProfile,
+    });
+    downloadText(content, buildFilename(`${project.title}-${book.title}`, "html"), "text/html;charset=utf-8");
+    toast.success("Libro exportado en HTML", {
+      description: "Ideal para revisar en navegador o guardar como PDF sin perder la composición del manuscrito.",
+    });
   };
 
   const handleExportChapterDocx = async () => {
@@ -1443,6 +1529,40 @@ export default function BookPage({ params }: PageProps) {
                         />
                       </div>
                     ) : null}
+                    {recentRecoveryNotice?.workspace === "writing" &&
+                    recentRecoveryNotice.chapterId === selectedChapter.id ? (
+                      <div className="mb-4 rounded-2xl border border-emerald-500/25 bg-emerald-500/8 px-4 py-3">
+                        <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                          <div>
+                            <p className="text-sm font-medium">
+                              Se recuperó tu último guardado automático
+                            </p>
+                            <p className="mt-1 text-xs leading-5 text-muted-foreground">
+                              {recentRecoveryNotice.chapterTitle} · {formatRelativeWorkspaceTime(recentRecoveryNotice.savedAt)}
+                            </p>
+                          </div>
+                          <div className="flex flex-wrap gap-2">
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="rounded-xl"
+                              onClick={() => setVersionsOpen(true)}
+                            >
+                              <History className="mr-2 h-4 w-4" />
+                              Ver versiones
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="rounded-xl"
+                              onClick={() => setRecentRecoveryNotice(null)}
+                            >
+                              Entendido
+                            </Button>
+                          </div>
+                        </div>
+                      </div>
+                    ) : null}
 	                  <div className="flex items-start justify-between gap-3">
 	                    <div className="min-w-0 flex-1">
                       <div className="flex min-w-0 flex-wrap items-center gap-2">
@@ -1652,7 +1772,7 @@ export default function BookPage({ params }: PageProps) {
                             disabled={viewMode === "corkboard"}
                           >
                             <Sparkles className="mr-1 h-3.5 w-3.5" />
-                            {showAI ? "IA activa" : "Mostrar IA"}
+                            {showAI ? "Ocultar IA" : "Mostrar IA"}
                           </Button>
                         </div>
                       ) : (
@@ -1661,7 +1781,27 @@ export default function BookPage({ params }: PageProps) {
                             <Badge variant="outline" className="rounded-full px-2.5 py-0.5 text-[10px]">
                               {book.title}
                             </Badge>
+                            {autoResumedChapterId === selectedChapter.id ? (
+                              <Badge variant="outline" className="rounded-full px-2.5 py-0.5 text-[10px]">
+                                Retomado
+                              </Badge>
+                            ) : null}
                             <span>{chapters.length} capítulos</span>
+                          </div>
+                          <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                            <span>Último guardado {formatRelativeWorkspaceTime(latestWritingSavedAt)}</span>
+                            <span>•</span>
+                            <span>
+                              {chapterSnapshots.length === 1
+                                ? "1 versión reciente"
+                                : `${chapterSnapshots.length} versiones recientes`}
+                            </span>
+                            {latestSnapshotAt ? (
+                              <>
+                                <span>•</span>
+                                <span>último snapshot {formatRelativeWorkspaceTime(latestSnapshotAt)}</span>
+                              </>
+                            ) : null}
                           </div>
 	                          <div className="flex flex-wrap gap-2">
                             <Button
@@ -1861,7 +2001,19 @@ export default function BookPage({ params }: PageProps) {
             </div>
 
             <div className="shrink-0 border-t bg-background/80 px-6 py-2 text-[11px] text-muted-foreground md:px-8">
-              {saveCopy[saveState]}
+              <div className="flex flex-col gap-1 md:flex-row md:items-center md:justify-between">
+                <span>{saveCopy[saveState]}</span>
+                {selectedChapter ? (
+                  <span>
+                    Último guardado {formatRelativeWorkspaceTime(latestWritingSavedAt)}
+                    {chapterSnapshots.length > 0
+                      ? ` · ${chapterSnapshots.length} ${
+                          chapterSnapshots.length === 1 ? "snapshot" : "snapshots"
+                        }`
+                      : " · sin snapshots todavía"}
+                  </span>
+                ) : null}
+              </div>
             </div>
           </div>
 
@@ -2037,6 +2189,33 @@ export default function BookPage({ params }: PageProps) {
               <span className="font-medium">Libro completo · TXT</span>
               <span className="mt-1 text-xs text-muted-foreground">
                 Copia plana y transportable del manuscrito actual.
+              </span>
+            </Button>
+            <Button
+              variant="outline"
+              className="h-auto flex-col items-start rounded-2xl px-4 py-4 text-left"
+              onClick={() => {
+                handleExportChapterHtml();
+                setExportOpen(false);
+              }}
+              disabled={!selectedChapter}
+            >
+              <span className="font-medium">Capítulo actual · HTML</span>
+              <span className="mt-1 text-xs text-muted-foreground">
+                Conserva mejor estructura, estilos e imágenes. Ideal para navegador o PDF.
+              </span>
+            </Button>
+            <Button
+              variant="outline"
+              className="h-auto flex-col items-start rounded-2xl px-4 py-4 text-left"
+              onClick={() => {
+                handleExportBookHtml();
+                setExportOpen(false);
+              }}
+            >
+              <span className="font-medium">Libro completo · HTML</span>
+              <span className="mt-1 text-xs text-muted-foreground">
+                Salida visual más fiel para revisar, compartir o imprimir fuera de Péndola.
               </span>
             </Button>
           </div>
