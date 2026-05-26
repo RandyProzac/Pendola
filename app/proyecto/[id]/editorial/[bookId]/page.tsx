@@ -18,6 +18,13 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
+import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetHeader,
+  SheetTitle,
+} from "@/components/ui/sheet";
 import { SidebarTrigger } from "@/components/ui/sidebar";
 import { ThemeToggle } from "@/components/layout/theme-toggle";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -228,6 +235,7 @@ export default function EditorialBookPage({ params }: PageProps) {
   const [projectTitleDraft, setProjectTitleDraft] = useState("");
   const [isEditingProjectTitle, setIsEditingProjectTitle] = useState(false);
   const [showAI, setShowAI] = useState(true);
+  const [mobileAIOpen, setMobileAIOpen] = useState(false);
   const [isFocusMode, setIsFocusMode] = useState(false);
   const [saveState, setSaveState] = useState<SaveStatus>("saved");
   const [versionsOpen, setVersionsOpen] = useState(false);
@@ -1105,9 +1113,18 @@ export default function EditorialBookPage({ params }: PageProps) {
                         Personalización
                       </Button>
                       <Button
+                        variant={mobileAIOpen ? "secondary" : "outline"}
+                        size="sm"
+                        className="rounded-xl xl:hidden"
+                        onClick={() => setMobileAIOpen((value) => !value)}
+                      >
+                        <Sparkles className="mr-2 h-4 w-4" />
+                        {mobileAIOpen ? "Cerrar IA" : "Abrir IA"}
+                      </Button>
+                      <Button
                         variant={showAI ? "secondary" : "outline"}
                         size="sm"
-                        className="rounded-xl"
+                        className="hidden rounded-xl xl:inline-flex"
                         onClick={() => setShowAI((value) => !value)}
                       >
                         <Sparkles className="mr-2 h-4 w-4" />
@@ -1230,6 +1247,54 @@ export default function EditorialBookPage({ params }: PageProps) {
               />
             </div>
           )}
+
+          <Sheet open={mobileAIOpen && !isFocusMode} onOpenChange={setMobileAIOpen}>
+            <SheetContent
+              side="bottom"
+              className="h-[85vh] rounded-t-[1.75rem] border-t bg-background p-0 xl:hidden"
+            >
+              <SheetHeader className="border-b px-4 py-3 text-left">
+                <SheetTitle>Mesa editorial IA</SheetTitle>
+                <SheetDescription>
+                  Corrección, pulido e informes editoriales para este capítulo.
+                </SheetDescription>
+              </SheetHeader>
+              <div className="min-h-0 flex-1">
+                <AIPanel
+                  visible={mobileAIOpen && !isFocusMode}
+                  className="h-full w-full border-l-0"
+                  projectId={project.id}
+                  chapterId={selectedChapter?.id}
+                  workspace="editorial"
+                  projectTitle={project.title}
+                  chapterTitle={selectedChapter?.title}
+                  initialPrompt={starterPrompt}
+                  contextBuilder={buildEditorialContext}
+                  customConfig={aiConfig}
+                  fixedMode="editorial"
+                  systemPromptOverride={editorialSystemPrompt}
+                  panelTitle="Mesa editorial IA"
+                  panelDescription="Corrección y pulido editorial."
+                  assistantLabel="Editora IA"
+                  inputPlaceholder="Prompt libre editorial: pide un ajuste puntual, una corrección completa o un informe específico..."
+                  disableCreativeTransforms
+                  externalPromptRequest={editorialPromptRequest ?? undefined}
+                  onInsertAtCursor={(text) => {
+                    editorRef.current?.insertAtCursor(text);
+                    toast.success("Texto insertado en la versión editorial");
+                  }}
+                  onAppendToEnd={(text) => {
+                    editorRef.current?.appendToEnd(text);
+                    toast.success("Texto agregado al final de la versión editorial");
+                  }}
+                  onReplaceSelection={(text) => {
+                    editorRef.current?.replaceSelection(text);
+                    toast.success("Selección editorial reemplazada con texto corregido");
+                  }}
+                />
+              </div>
+            </SheetContent>
+          </Sheet>
         </section>
       </div>
 

@@ -31,6 +31,13 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetHeader,
+  SheetTitle,
+} from "@/components/ui/sheet";
+import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuGroup,
@@ -259,6 +266,7 @@ export default function BookPage({ params }: PageProps) {
   const [projectTitleDraft, setProjectTitleDraft] = useState("");
   const [isEditingProjectTitle, setIsEditingProjectTitle] = useState(false);
   const [showAI, setShowAI] = useState(true);
+  const [mobileAIOpen, setMobileAIOpen] = useState(false);
   const [isFocusMode, setIsFocusMode] = useState(false);
   const [isHeaderCollapsed, setIsHeaderCollapsed] = useState(false);
   const [viewMode, setViewMode] = useState<BookViewMode>("write");
@@ -1626,9 +1634,19 @@ export default function BookPage({ params }: PageProps) {
                             Focus
                           </Button>
                           <Button
+                            variant={mobileAIOpen ? "secondary" : "outline"}
+                            size="xs"
+                            className="rounded-full xl:hidden"
+                            onClick={() => setMobileAIOpen((value) => !value)}
+                            disabled={viewMode === "corkboard"}
+                          >
+                            <Sparkles className="mr-1 h-3.5 w-3.5" />
+                            {mobileAIOpen ? "Cerrar IA" : "Abrir IA"}
+                          </Button>
+                          <Button
                             variant={showAI ? "secondary" : "outline"}
                             size="xs"
-                            className="rounded-full"
+                            className="hidden rounded-full xl:inline-flex"
                             onClick={() => setShowAI((value) => !value)}
                             disabled={viewMode === "corkboard"}
                           >
@@ -1725,9 +1743,19 @@ export default function BookPage({ params }: PageProps) {
                               Personalización
                             </Button>
                             <Button
+                              variant={mobileAIOpen ? "secondary" : "outline"}
+                              size="sm"
+                              className="rounded-xl xl:hidden"
+                              onClick={() => setMobileAIOpen((value) => !value)}
+                              disabled={viewMode === "corkboard"}
+                            >
+                              <Sparkles className="mr-2 h-4 w-4" />
+                              {mobileAIOpen ? "Cerrar IA" : "Abrir IA"}
+                            </Button>
+                            <Button
                               variant={showAI ? "secondary" : "outline"}
                               size="sm"
-                              className="rounded-xl"
+                              className="hidden rounded-xl xl:inline-flex"
                               onClick={() => setShowAI((value) => !value)}
                               disabled={viewMode === "corkboard"}
                             >
@@ -1864,6 +1892,46 @@ export default function BookPage({ params }: PageProps) {
               />
             </div>
           )}
+
+          <Sheet open={mobileAIOpen && !isFocusMode && viewMode === "write"} onOpenChange={setMobileAIOpen}>
+            <SheetContent
+              side="bottom"
+              className="h-[85vh] rounded-t-[1.75rem] border-t bg-background p-0 xl:hidden"
+            >
+              <SheetHeader className="border-b px-4 py-3 text-left">
+                <SheetTitle>Mesa IA</SheetTitle>
+                <SheetDescription>
+                  Ideas, revisión e inserción directa para este capítulo.
+                </SheetDescription>
+              </SheetHeader>
+              <div className="min-h-0 flex-1">
+                <AIPanel
+                  visible={mobileAIOpen && !isFocusMode && viewMode === "write"}
+                  className="h-full w-full border-l-0"
+                  projectId={project.id}
+                  chapterId={selectedChapter?.id}
+                  workspace="writing"
+                  projectTitle={project.title}
+                  chapterTitle={selectedChapter?.title}
+                  initialPrompt={starterPrompt}
+                  contextBuilder={buildWritingContext}
+                  customConfig={aiConfig}
+                  onInsertAtCursor={(text) => {
+                    editorRef.current?.insertAtCursor(text);
+                    toast.success("Texto insertado en el cursor");
+                  }}
+                  onAppendToEnd={(text) => {
+                    editorRef.current?.appendToEnd(text);
+                    toast.success("Texto agregado al final del capítulo");
+                  }}
+                  onReplaceSelection={(text) => {
+                    editorRef.current?.replaceSelection(text);
+                    toast.success("Selección reemplazada con texto de la IA");
+                  }}
+                />
+              </div>
+            </SheetContent>
+          </Sheet>
         </section>
       </div>
 
