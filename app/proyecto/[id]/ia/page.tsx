@@ -247,19 +247,7 @@ export default function IAProjectPage({ params }: PageProps) {
       </header>
 
       <div className="flex-1 px-4 py-6 md:px-6 md:py-8">
-        <div className="mx-auto flex max-w-6xl flex-col gap-5">
-          <div className="flex flex-wrap items-end justify-between gap-3">
-            <div className="max-w-3xl">
-              <h2 className="text-2xl font-semibold tracking-tight md:text-3xl">
-                Conversa libremente con Péndola sobre el proyecto completo.
-              </h2>
-              <p className="mt-2 text-sm leading-7 text-muted-foreground">
-                Sin paneles de instrucciones ni cajas pesadas. Solo conversación, auditorías por tandas
-                y respuestas jerárquicas cuando haga falta profundidad.
-              </p>
-            </div>
-          </div>
-
+        <div className="mx-auto flex w-full max-w-[1500px] flex-col gap-5">
           <section className="min-h-[68dvh] overflow-hidden">
             <AIPanel
               visible

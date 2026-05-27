@@ -1586,12 +1586,13 @@ export const useProjectStore = create<ProjectStore>()(
         } catch (error: unknown) {
           const message =
             error instanceof Error ? error.message : 'El servidor de IA no respondió'
+          const effectiveProvider = customConfig?.provider || get().aiSettings.provider
           const providerLabel =
-            customConfig?.provider === 'openai'
+            effectiveProvider === 'openai'
               ? 'OpenAI'
-              : customConfig?.provider === 'anthropic'
+              : effectiveProvider === 'anthropic'
               ? 'Anthropic'
-              : customConfig?.provider === 'gemini'
+              : effectiveProvider === 'gemini'
               ? 'Gemini'
               : 'Ollama'
 

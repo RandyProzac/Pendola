@@ -314,8 +314,59 @@ export function AIPanel({
   const initialPromptSent = useRef(false);
   const lastExternalPromptId = useRef<string | null>(null);
   const attachmentInputRef = useRef<HTMLInputElement>(null);
+  const cleanChatScrollRef = useRef<HTMLDivElement | null>(null);
+  const bottomAnchorRef = useRef<HTMLDivElement | null>(null);
   const modeCopy = fixedMode ? AI_MODE_CONFIG[fixedMode] : null;
   const isCleanChat = presentation === "clean-chat";
+  const effectiveRequestConfig = useMemo<AIRequestConfig>(() => {
+    const provider = customConfig?.provider || aiSettings.provider;
+
+    if (provider === "openai") {
+      return {
+        provider,
+        apiKey: customConfig?.apiKey || aiSettings.openaiKey,
+        model: customConfig?.model,
+        baseURL: customConfig?.baseURL,
+      };
+    }
+
+    if (provider === "anthropic") {
+      return {
+        provider,
+        apiKey: customConfig?.apiKey || aiSettings.anthropicKey,
+        model: customConfig?.model,
+        baseURL: customConfig?.baseURL,
+      };
+    }
+
+    if (provider === "gemini") {
+      return {
+        provider,
+        apiKey: customConfig?.apiKey || aiSettings.geminiKey,
+        model: customConfig?.model,
+        baseURL: customConfig?.baseURL,
+      };
+    }
+
+    return {
+      provider: "ollama",
+      apiKey: customConfig?.apiKey || aiSettings.ollamaKey,
+      baseURL: customConfig?.baseURL || aiSettings.ollamaBaseUrl,
+      model: customConfig?.model || aiSettings.ollamaModel,
+    };
+  }, [
+    aiSettings.anthropicKey,
+    aiSettings.geminiKey,
+    aiSettings.ollamaBaseUrl,
+    aiSettings.ollamaKey,
+    aiSettings.ollamaModel,
+    aiSettings.openaiKey,
+    aiSettings.provider,
+    customConfig?.apiKey,
+    customConfig?.baseURL,
+    customConfig?.model,
+    customConfig?.provider,
+  ]);
   const resolvedPanelTitle =
     panelTitle || (workspace === "editorial" ? "IA editorial" : "IA");
   const resolvedAssistantLabel =
@@ -611,7 +662,7 @@ export function AIPanel({
       ? [baseContextText, attachmentTextContext].filter(Boolean).join("\n\n")
       : baseContextText;
     const shouldAttachImages =
-      (customConfig?.provider || aiSettings.provider) !== "ollama" &&
+      effectiveRequestConfig.provider !== "ollama" &&
       (projectVisualResources.length > 0 || attachmentVisualResources.length > 0) &&
       (shouldAttachProjectImages(messageContent) || attachmentVisualResources.length > 0);
     const visualResources = shouldAttachImages
@@ -631,13 +682,13 @@ export function AIPanel({
       projectTitle,
       chapterTitle,
       contextText: resolvedContextText,
-      customConfig,
+      customConfig: effectiveRequestConfig,
       preferredLanguage,
       systemPrompt: systemPromptOverride || resolvedModeConfig.buildSystemPrompt(preferredLanguage),
       visualResources,
     });
     setComposerAttachments([]);
-  }, [activeConversation, aiSettings.provider, attachmentTextContext, attachmentVisualResources, chapterId, chapterTitle, contextBuilder, contextText, createAIConversation, customConfig, ensureConversationTitle, fixedMode, projectId, projectTitle, projectVisualResources, prompt, requestAIResponse, systemPromptOverride, updateAIConversation, workspace]);
+  }, [activeConversation, attachmentTextContext, attachmentVisualResources, chapterId, chapterTitle, contextBuilder, contextText, createAIConversation, effectiveRequestConfig, ensureConversationTitle, fixedMode, projectId, projectTitle, projectVisualResources, prompt, requestAIResponse, systemPromptOverride, updateAIConversation, workspace]);
 
   useEffect(() => {
     if (!visible || !initialPrompt || initialPromptSent.current) return;
@@ -666,6 +717,18 @@ export function AIPanel({
     setCopiedMessageId(messageId);
     setTimeout(() => setCopiedMessageId((current) => (current === messageId ? null : current)), 2000);
   };
+
+  useEffect(() => {
+    if (!isCleanChat) return;
+
+    const scroller = cleanChatScrollRef.current;
+    const anchor = bottomAnchorRef.current;
+    if (!scroller || !anchor) return;
+
+    requestAnimationFrame(() => {
+      anchor.scrollIntoView({ behavior: "smooth", block: "end" });
+    });
+  }, [isCleanChat, isLoading, messages.length]);
 
   const handleNewConversation = () => {
     const created = createAIConversation({
@@ -778,8 +841,11 @@ Reglas:
         </div>
       </div>
 
-      <ScrollArea className="min-h-0 flex-1">
-        <div className="space-y-2 px-3 py-3">
+      <div
+        className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-3 py-3"
+        style={{ WebkitOverflowScrolling: "touch" }}
+      >
+        <div className="space-y-2">
           {conversations.length === 0 ? (
             <div className="rounded-2xl border border-dashed border-border/60 px-4 py-5 text-sm text-muted-foreground">
               {showArchived
@@ -788,39 +854,69 @@ Reglas:
             </div>
           ) : (
             conversations.map((conversation) => (
-              <button
+              <div
                 key={conversation.id}
-                type="button"
+                role="button"
+                tabIndex={0}
                 onClick={() => {
                   setActiveConversationId(conversation.id);
                   setDraftTitle(conversation.title);
                   setEditingTitle(false);
                 }}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter" || event.key === " ") {
+                    event.preventDefault();
+                    setActiveConversationId(conversation.id);
+                    setDraftTitle(conversation.title);
+                    setEditingTitle(false);
+                  }
+                }}
                 className={cn(
-                  "w-full rounded-2xl border px-3 py-3 text-left transition-colors",
+                  "group w-full rounded-2xl border px-3 py-3 text-left transition-colors",
                   activeConversation?.id === conversation.id
                     ? "border-violet-500/30 bg-violet-500/10"
-                    : "border-transparent bg-muted/20 hover:border-border/60 hover:bg-muted/35"
+                    : "border-transparent bg-muted/20 hover:border-border/60 hover:bg-muted/35",
+                  "cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
                 )}
               >
                 <div className="flex items-center justify-between gap-2">
-                  <p className="truncate text-sm font-medium">{conversation.title}</p>
-                  {conversation.archivedAt ? (
-                    <Badge variant="outline" className="px-1.5 py-0 text-[9px]">
-                      Archivada
-                    </Badge>
-                  ) : null}
+                  <p className="line-clamp-2 min-w-0 flex-1 text-sm font-medium leading-5">
+                    {conversation.title}
+                  </p>
+                  <div className="flex shrink-0 items-center gap-1">
+                    {conversation.archivedAt ? (
+                      <Badge variant="outline" className="px-1.5 py-0 text-[9px]">
+                        Archivada
+                      </Badge>
+                    ) : null}
+                    <button
+                      type="button"
+                      className="inline-flex h-7 w-7 items-center justify-center rounded-full text-muted-foreground opacity-0 transition hover:bg-background/70 hover:text-destructive group-hover:opacity-100"
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        if (activeConversationId === conversation.id) {
+                          setActiveConversationId(null);
+                          setEditingTitle(false);
+                        }
+                        deleteAIConversation(conversation.id);
+                      }}
+                      title="Eliminar chat"
+                      aria-label="Eliminar chat"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
                 </div>
-                <p className="mt-1 truncate text-xs text-muted-foreground">
+                <p className="mt-1 line-clamp-2 text-xs leading-5 text-muted-foreground">
                   {conversation.messages.length > 0
                     ? conversation.messages[conversation.messages.length - 1].content
                     : "Sin mensajes todavía"}
                 </p>
-              </button>
+              </div>
             ))
           )}
         </div>
-      </ScrollArea>
+      </div>
     </div>
   );
 
@@ -828,15 +924,15 @@ Reglas:
     return (
       <div
         className={cn(
-          "grid h-full min-h-0 w-full grid-cols-1 gap-6 bg-transparent lg:grid-cols-[18rem_minmax(0,1fr)]",
+          "grid h-full min-h-0 w-full grid-cols-1 gap-4 bg-transparent lg:grid-cols-[20rem_minmax(0,1fr)] lg:gap-0",
           className
         )}
       >
-        <aside className="hidden min-h-0 overflow-hidden rounded-[1.5rem] border border-border/50 bg-muted/10 lg:flex">
+        <aside className="hidden h-[calc(100dvh-11rem)] min-h-0 self-start overflow-hidden rounded-[1.75rem] border border-border/60 bg-zinc-950/65 shadow-[inset_0_1px_0_rgba(255,255,255,0.03)] lg:sticky lg:top-6 lg:flex">
           {cleanChatConversationList}
         </aside>
 
-        <div className="flex min-h-0 flex-col">
+        <div className="flex h-[calc(100dvh-11rem)] min-h-0 flex-col lg:pl-5">
           <div className="mb-3 flex items-center justify-end gap-2 lg:hidden">
             <Button
               type="button"
@@ -861,11 +957,13 @@ Reglas:
           </div>
 
           {/* Messages */}
-          <ScrollArea
+          <div
+            ref={cleanChatScrollRef}
             className={cn(
-              "min-h-0 flex-1 touch-pan-y px-0",
+              "min-h-0 flex-1 overflow-y-auto overscroll-contain touch-pan-y px-0",
               isCenteredEmpty && "mt-[5vh] flex-none"
             )}
+            style={{ WebkitOverflowScrolling: "touch" }}
           >
             <div
               className={cn(
@@ -982,8 +1080,9 @@ Reglas:
                   </div>
                 </div>
               )}
+              <div ref={bottomAnchorRef} />
             </div>
-          </ScrollArea>
+          </div>
 
           {/* Input */}
           <div className="shrink-0 border-t-0 bg-transparent px-0 pb-[calc(env(safe-area-inset-bottom)+1rem)]">
