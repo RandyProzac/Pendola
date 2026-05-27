@@ -33,6 +33,7 @@ import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Input } from "@/components/ui/input";
 import { Progress } from "@/components/ui/progress";
+import { MarkdownMessage } from "@/components/ui/markdown-message";
 import { generateConversationTitle } from "@/lib/ai/conversations";
 import { detectPreferredLanguageFromText } from "@/lib/ai/language";
 import { AI_MODE_CONFIG } from "@/lib/ai/modes";
@@ -253,6 +254,12 @@ interface AIPanelProps {
     prompt: string;
     mode?: AIMode;
   };
+  quickActions?: Array<{
+    id: string;
+    label: string;
+    onClick: () => void;
+  }>;
+  presentation?: "default" | "clean-chat";
   className?: string;
   onInsertAtCursor?: (text: string) => void;
   onAppendToEnd?: (text: string) => void;
@@ -279,6 +286,8 @@ export function AIPanel({
   disableCreativeTransforms = false,
   compactMode = false,
   externalPromptRequest,
+  quickActions = [],
+  presentation = "default",
   className,
   onInsertAtCursor,
   onAppendToEnd,
@@ -306,6 +315,7 @@ export function AIPanel({
   const lastExternalPromptId = useRef<string | null>(null);
   const attachmentInputRef = useRef<HTMLInputElement>(null);
   const modeCopy = fixedMode ? AI_MODE_CONFIG[fixedMode] : null;
+  const isCleanChat = presentation === "clean-chat";
   const resolvedPanelTitle =
     panelTitle || (workspace === "editorial" ? "IA editorial" : "IA");
   const resolvedAssistantLabel =
@@ -519,6 +529,7 @@ export function AIPanel({
   const canUseCreativeTransforms = !disableCreativeTransforms && workspace !== "project";
   const mode = fixedMode ?? activeConversation?.mode ?? "copiloto";
   const isLoading = activeConversation?.isGenerating ?? false;
+  const isCenteredEmpty = isCleanChat && messages.length === 0 && !isLoading;
   const conversationUsage = useMemo(
     () =>
       sumUsageSnapshots(
@@ -723,16 +734,413 @@ Reglas:
 
   if (!visible) return null;
 
+  const cleanChatConversationList = (
+    <div className="flex h-full min-h-0 flex-col">
+      <div className="border-b border-border/50 px-4 py-4">
+        <div className="flex items-center justify-between gap-2">
+          <div>
+            <p className="text-sm font-medium text-foreground">Chats del proyecto</p>
+            <p className="text-xs text-muted-foreground">
+              {showArchived ? "Archivados" : "Recientes"}
+            </p>
+          </div>
+          <Button
+            type="button"
+            size="sm"
+            variant="ghost"
+            className="h-8 rounded-full px-3 text-muted-foreground"
+            onClick={handleNewConversation}
+          >
+            <MessageSquarePlus className="mr-1 h-3.5 w-3.5" />
+            Nueva
+          </Button>
+        </div>
+        <div className="mt-3 flex items-center gap-2">
+          <Button
+            type="button"
+            size="sm"
+            variant={!showArchived ? "secondary" : "ghost"}
+            className="h-8 rounded-full px-3 text-xs"
+            onClick={() => setShowArchived(false)}
+          >
+            Activas
+          </Button>
+          <Button
+            type="button"
+            size="sm"
+            variant={showArchived ? "secondary" : "ghost"}
+            className="h-8 rounded-full px-3 text-xs"
+            onClick={() => setShowArchived(true)}
+          >
+            Archivadas
+            {archivedConversations.length ? ` (${archivedConversations.length})` : ""}
+          </Button>
+        </div>
+      </div>
+
+      <ScrollArea className="min-h-0 flex-1">
+        <div className="space-y-2 px-3 py-3">
+          {conversations.length === 0 ? (
+            <div className="rounded-2xl border border-dashed border-border/60 px-4 py-5 text-sm text-muted-foreground">
+              {showArchived
+                ? "No hay conversaciones archivadas todavía."
+                : "Empieza una conversación nueva para guardar el historial aquí."}
+            </div>
+          ) : (
+            conversations.map((conversation) => (
+              <button
+                key={conversation.id}
+                type="button"
+                onClick={() => {
+                  setActiveConversationId(conversation.id);
+                  setDraftTitle(conversation.title);
+                  setEditingTitle(false);
+                }}
+                className={cn(
+                  "w-full rounded-2xl border px-3 py-3 text-left transition-colors",
+                  activeConversation?.id === conversation.id
+                    ? "border-violet-500/30 bg-violet-500/10"
+                    : "border-transparent bg-muted/20 hover:border-border/60 hover:bg-muted/35"
+                )}
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <p className="truncate text-sm font-medium">{conversation.title}</p>
+                  {conversation.archivedAt ? (
+                    <Badge variant="outline" className="px-1.5 py-0 text-[9px]">
+                      Archivada
+                    </Badge>
+                  ) : null}
+                </div>
+                <p className="mt-1 truncate text-xs text-muted-foreground">
+                  {conversation.messages.length > 0
+                    ? conversation.messages[conversation.messages.length - 1].content
+                    : "Sin mensajes todavía"}
+                </p>
+              </button>
+            ))
+          )}
+        </div>
+      </ScrollArea>
+    </div>
+  );
+
+  if (isCleanChat) {
+    return (
+      <div
+        className={cn(
+          "grid h-full min-h-0 w-full grid-cols-1 gap-6 bg-transparent lg:grid-cols-[18rem_minmax(0,1fr)]",
+          className
+        )}
+      >
+        <aside className="hidden min-h-0 overflow-hidden rounded-[1.5rem] border border-border/50 bg-muted/10 lg:flex">
+          {cleanChatConversationList}
+        </aside>
+
+        <div className="flex min-h-0 flex-col">
+          <div className="mb-3 flex items-center justify-end gap-2 lg:hidden">
+            <Button
+              type="button"
+              size="sm"
+              variant={showArchived ? "secondary" : "ghost"}
+              className="h-8 rounded-full px-3 text-muted-foreground"
+              onClick={() => setShowArchived((current) => !current)}
+            >
+              <Archive className="mr-1 h-3.5 w-3.5" />
+              {showArchived ? "Activas" : `Archivadas${archivedConversations.length ? ` (${archivedConversations.length})` : ""}`}
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              variant="ghost"
+              className="h-8 rounded-full px-3 text-muted-foreground"
+              onClick={handleNewConversation}
+            >
+              <MessageSquarePlus className="mr-1 h-3.5 w-3.5" />
+              Nueva
+            </Button>
+          </div>
+
+          {/* Messages */}
+          <ScrollArea
+            className={cn(
+              "min-h-0 flex-1 touch-pan-y px-0",
+              isCenteredEmpty && "mt-[5vh] flex-none"
+            )}
+          >
+            <div
+              className={cn(
+                "mx-auto w-full max-w-4xl space-y-8 px-0 py-6",
+                isCenteredEmpty && "space-y-6 py-0"
+              )}
+            >
+              {messages.length === 0 && (
+                <div className="border-0 bg-transparent px-0 py-20 text-center text-muted-foreground">
+                  <Sparkles className="mx-auto mb-5 h-10 w-10 text-violet-500/30" />
+                  <p className="mx-auto max-w-3xl text-2xl font-medium leading-[1.28] text-foreground md:text-3xl">
+                    {resolvedEmptyStateText}
+                  </p>
+                </div>
+              )}
+
+              {messages.map((msg, index) => (
+                <div
+                  key={msg.id}
+                  className={cn(
+                    msg.role === "user"
+                      ? "ml-auto max-w-2xl rounded-[2rem] bg-muted/70 px-5 py-4"
+                      : "mr-0 max-w-3xl bg-transparent px-0 py-0"
+                  )}
+                >
+                  <div className={cn("flex items-start justify-between gap-2", msg.role === "assistant" && "mb-2")}>
+                    <div className="mb-1.5 flex items-center gap-1.5">
+                      {msg.role === "assistant" ? (
+                        <Sparkles className="h-3 w-3 text-violet-500" />
+                      ) : null}
+                      <span className="text-xs font-medium text-muted-foreground">
+                        {msg.role === "user" ? "Tú" : resolvedAssistantLabel}
+                      </span>
+                    </div>
+                    {msg.role === "assistant" && (
+                      <button
+                        type="button"
+                        onClick={() => handleCopy(msg.id, msg.content)}
+                        className="inline-flex h-7 w-7 items-center justify-center rounded-full border border-transparent text-muted-foreground transition-colors hover:border-border hover:bg-background hover:text-foreground"
+                        title="Copiar respuesta"
+                        aria-label="Copiar respuesta"
+                      >
+                        {copiedMessageId === msg.id ? (
+                          <Check className="h-3 w-3 text-emerald-500" />
+                        ) : (
+                          <Copy className="h-3 w-3" />
+                        )}
+                      </button>
+                    )}
+                  </div>
+                  {msg.role === "assistant" ? (
+                    <MarkdownMessage content={msg.content} />
+                  ) : (
+                    <p className="whitespace-pre-wrap text-[15px] leading-8">
+                      {msg.content}
+                    </p>
+                  )}
+                  {msg.role === "assistant" && msg.responseType && (
+                    <div className="mt-5 flex flex-wrap items-center gap-2">
+                      <span
+                        className={cn(
+                          "inline-flex rounded-full border px-2 py-1 text-[10px] font-medium",
+                          responseTypeMeta[msg.responseType].variantClass
+                        )}
+                      >
+                        {responseTypeMeta[msg.responseType].label}
+                      </span>
+                      {msg.usage ? (
+                        <span className="inline-flex rounded-full border border-border/70 bg-background/60 px-2 py-1 text-[10px] text-muted-foreground">
+                          {msg.usage.source === "cache" ? "Cache" : `${formatTokenCount(msg.usage.totalTokens)} tok`}
+                          {typeof msg.usage.estimatedCostUsd === "number"
+                            ? ` · ${formatUsd(msg.usage.estimatedCostUsd)}`
+                            : ""}
+                        </span>
+                      ) : null}
+                    </div>
+                  )}
+                  {((canApplyToManuscript && shouldShowInsertionActions(msg)) ||
+                    shouldShowContinueGenerating(msg, index, messages, isLoading) ||
+                    shouldShowAppendToEndAction(msg, workspace) ||
+                    (canUseCreativeTransforms && shouldShowConvertToScene(msg)) ||
+                    (canUseCreativeTransforms && shouldShowRewriteAsProse(msg))) &&
+                    msg.content.trim() && (
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      {shouldShowContinueGenerating(msg, index, messages, isLoading) && (
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          className="h-7 text-[11px]"
+                          onClick={() => handleContinueGenerating(msg.content)}
+                        >
+                          <Sparkles className="mr-1 h-3 w-3" />
+                          Seguir generando
+                        </Button>
+                      )}
+                    </div>
+                  )}
+                </div>
+              ))}
+
+              {isLoading && (
+                <div className="mr-0 max-w-3xl border-0 bg-transparent px-0">
+                  <div className="mb-1.5 flex items-center gap-1.5">
+                    <Sparkles className="h-3 w-3 animate-pulse text-violet-500" />
+                    <span className="text-xs font-medium text-muted-foreground">
+                      {resolvedAssistantLabel}
+                    </span>
+                  </div>
+                  <div className="flex gap-1">
+                    <div className="h-2 w-2 animate-bounce rounded-full bg-violet-500/50" style={{ animationDelay: "0ms" }} />
+                    <div className="h-2 w-2 animate-bounce rounded-full bg-violet-500/50" style={{ animationDelay: "150ms" }} />
+                    <div className="h-2 w-2 animate-bounce rounded-full bg-violet-500/50" style={{ animationDelay: "300ms" }} />
+                  </div>
+                </div>
+              )}
+            </div>
+          </ScrollArea>
+
+          {/* Input */}
+          <div className="shrink-0 border-t-0 bg-transparent px-0 pb-[calc(env(safe-area-inset-bottom)+1rem)]">
+            {typeof budgetProgress === "number" && !isCenteredEmpty ? (
+              <div
+                className={cn(
+                  "mx-auto mb-3 w-full max-w-4xl rounded-full border bg-background/70 px-3 py-2.5",
+                  budgetState === "warning" && "border-amber-300 bg-amber-50/70 dark:bg-amber-500/10",
+                  budgetState === "exceeded" && "border-rose-300 bg-rose-50/70 dark:bg-rose-500/10"
+                )}
+              >
+                <div className="mb-1.5 flex items-center justify-between gap-2 text-[11px] text-muted-foreground">
+                  <span>Consumo de IA</span>
+                  <span>
+                    {formatUsd(globalUsage?.estimatedCostUsd)} / {formatUsd(budgetUsd)}
+                  </span>
+                </div>
+                <Progress value={budgetProgress} className="gap-0" aria-label="Consumo de IA" />
+              </div>
+            ) : null}
+            <input
+              ref={attachmentInputRef}
+              type="file"
+              multiple
+              accept=".pdf,.txt,.md,.rtf,.jpg,.jpeg,.png,.webp,.gif"
+              className="hidden"
+              onChange={(event) => {
+                void handleAttachmentUpload(event);
+              }}
+            />
+            {composerAttachments.length > 0 ? (
+              <div className="mx-auto mb-3 flex w-full max-w-4xl flex-wrap gap-2">
+                {composerAttachments.map((attachment) => (
+                  <div
+                    key={attachment.id}
+                    className="inline-flex items-center gap-2 rounded-full border bg-card/80 px-3 py-1.5 text-[11px] text-muted-foreground"
+                  >
+                    <span className="max-w-[180px] truncate">{attachment.name}</span>
+                    <button
+                      type="button"
+                      onClick={() => removeComposerAttachment(attachment.id)}
+                      className="inline-flex h-4 w-4 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                      aria-label={`Quitar ${attachment.name}`}
+                    >
+                      <X className="h-3 w-3" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            ) : null}
+            {messages.length > 0 && quickActions.length > 0 ? (
+              <div className="mx-auto mb-3 flex w-full max-w-4xl gap-2 overflow-x-auto pb-1">
+                {quickActions.map((action) => (
+                  <Button
+                    key={action.id}
+                    type="button"
+                    variant="ghost"
+                    className="shrink-0 rounded-full border px-3 text-xs text-muted-foreground"
+                    onClick={action.onClick}
+                  >
+                    {action.label}
+                  </Button>
+                ))}
+              </div>
+            ) : null}
+            <div
+              className={cn(
+                "rounded-3xl transition-colors",
+                isDragOverComposer && "bg-violet-500/8 ring-2 ring-violet-400/40 ring-offset-2 ring-offset-background",
+                isCenteredEmpty && "mt-3"
+              )}
+              onDrop={(event) => {
+                void handleComposerDrop(event);
+              }}
+              onDragOver={handleComposerDragOver}
+              onDragLeave={handleComposerDragLeave}
+            >
+              <div className="mx-auto w-full max-w-5xl">
+                <div className="flex items-end gap-3 rounded-[2rem] border border-zinc-700/35 bg-zinc-800/95 px-5 py-4 shadow-[0_18px_60px_rgba(15,23,42,0.08)]">
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    className="mb-1 h-10 w-10 shrink-0 rounded-full text-zinc-400 hover:bg-white/5 hover:text-white"
+                    onClick={() => attachmentInputRef.current?.click()}
+                    disabled={isPreparingAttachments || isLoading}
+                    aria-label="Adjuntar archivos"
+                    title="Adjuntar archivos"
+                  >
+                    <Plus className="h-5 w-5" />
+                  </Button>
+                  <Textarea
+                    placeholder={resolvedInputPlaceholder}
+                    value={prompt}
+                    onChange={(e) => setPrompt(e.target.value)}
+                    onPaste={(event) => {
+                      void handleComposerPaste(event);
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" && !e.shiftKey) {
+                        e.preventDefault();
+                        handleSend();
+                      }
+                    }}
+                    rows={1}
+                    className="min-h-12 flex-1 resize-none border-none !bg-transparent px-0 py-1 text-base leading-7 text-white shadow-none placeholder:text-zinc-500 focus-visible:border-none focus-visible:ring-0 dark:!bg-transparent"
+                  />
+                  <div className="shrink-0 pl-2">
+                    <Button
+                      onClick={() => {
+                        void handleSend();
+                      }}
+                      size="icon"
+                      disabled={(!prompt.trim() && composerAttachments.length === 0) || isLoading || isPreparingAttachments}
+                      className="h-11 w-11 rounded-full bg-zinc-200 text-zinc-900 hover:bg-zinc-100"
+                    >
+                      <Send className="h-4 w-4" />
+                    </Button>
+                  </div>
+                </div>
+                {(isPreparingAttachments || composerAttachments.length > 0) && (
+                  <div className="mt-3 flex items-center gap-2 px-2 text-xs text-muted-foreground">
+                    {isPreparingAttachments ? (
+                      <span>Preparando adjuntos...</span>
+                    ) : (
+                      <span>
+                        {composerAttachments.length} adjunto{composerAttachments.length === 1 ? "" : "s"}
+                      </span>
+                    )}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div
       className={cn(
         "flex h-full min-h-0 w-[22rem] flex-col overflow-hidden border-l bg-card/72 backdrop-blur-xl",
         compactMode && "w-full border-l-0 bg-background/95 backdrop-blur-none",
+        isCleanChat && "w-full border-l-0 bg-transparent backdrop-blur-none",
+        isCenteredEmpty && "justify-start",
         className
       )}
     >
       {/* Header */}
-      <div className={cn("shrink-0 border-b bg-background/75 px-4 py-4", compactMode && "px-3 py-3")}>
+      <div
+        className={cn(
+          "shrink-0 border-b bg-background/75 px-4 py-4",
+          compactMode && "px-3 py-3",
+          isCleanChat && "border-b-0 bg-transparent px-0 py-2"
+        )}
+      >
         {compactMode ? (
           <div className="mb-3 flex items-center justify-between gap-2">
             <div className="flex min-w-0 items-center gap-2">
@@ -759,6 +1167,31 @@ Reglas:
               </Button>
             </div>
           </div>
+        ) : isCleanChat ? (
+          activeConversation || archivedConversations.length > 0 ? (
+            <div className="mb-3 flex items-center justify-end gap-2">
+              <Button
+                type="button"
+                size="sm"
+                variant={showArchived ? "secondary" : "ghost"}
+                className="h-8 rounded-full px-3 text-muted-foreground"
+                onClick={() => setShowArchived((current) => !current)}
+              >
+                <Archive className="mr-1 h-3.5 w-3.5" />
+                {showArchived ? "Activas" : `Archivadas${archivedConversations.length ? ` (${archivedConversations.length})` : ""}`}
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                variant="ghost"
+                className="h-8 rounded-full px-3 text-muted-foreground"
+                onClick={handleNewConversation}
+              >
+                <MessageSquarePlus className="mr-1 h-3.5 w-3.5" />
+                Nueva
+              </Button>
+            </div>
+          ) : null
         ) : (
           <div className="mb-4 rounded-2xl border bg-[radial-gradient(circle_at_top_right,rgba(139,92,246,0.14),transparent_38%),linear-gradient(180deg,rgba(255,255,255,0.92),rgba(248,250,252,0.88))] p-4 dark:bg-[radial-gradient(circle_at_top_right,rgba(139,92,246,0.18),transparent_40%),linear-gradient(180deg,rgba(15,23,42,0.9),rgba(15,23,42,0.84))]">
             <div className="mb-3 flex items-start justify-between gap-2">
@@ -790,7 +1223,13 @@ Reglas:
         )}
 
         {activeConversation && (
-          <div className={cn("rounded-2xl border bg-card/55 p-3", compactMode && "p-2.5")}>
+          <div
+            className={cn(
+              "rounded-2xl border bg-card/55 p-3",
+              compactMode && "p-2.5",
+              isCleanChat && "rounded-3xl border-border/70 bg-background/70 p-3.5"
+            )}
+          >
             <div className="flex items-center gap-2">
               {editingTitle ? (
                 <>
@@ -927,14 +1366,52 @@ Reglas:
       </div>
 
       {/* Messages */}
-      <ScrollArea className="min-h-0 flex-1 touch-pan-y">
-        <div className="space-y-4 px-4 py-4">
+      <ScrollArea
+        className={cn(
+          "min-h-0 flex-1 touch-pan-y",
+          isCleanChat && "px-0",
+          isCenteredEmpty && "mt-[5vh] flex-none"
+        )}
+      >
+        <div
+          className={cn(
+            "space-y-4 px-4 py-4",
+            isCleanChat && "mx-auto w-full max-w-4xl space-y-8 px-0 py-6",
+            isCenteredEmpty && "space-y-6 py-0"
+          )}
+        >
           {messages.length === 0 && (
-            <div className="rounded-2xl border border-dashed bg-muted/20 px-5 py-8 text-center text-muted-foreground">
-              <Sparkles className="mx-auto mb-3 h-9 w-9 text-violet-500/30" />
-              <p className="text-sm leading-6">
+            <div
+              className={cn(
+                "rounded-2xl border border-dashed bg-muted/20 px-5 py-8 text-center text-muted-foreground",
+                isCleanChat && "border-0 bg-transparent px-0 py-20"
+              )}
+            >
+              <Sparkles className={cn("mx-auto mb-3 h-9 w-9 text-violet-500/30", isCleanChat && "mb-5 h-10 w-10")} />
+              <p
+                className={cn(
+                  "text-sm leading-6",
+                  isCleanChat && "mx-auto max-w-2xl text-3xl font-medium leading-tight text-foreground",
+                  isCenteredEmpty && "max-w-3xl text-2xl leading-[1.28] md:text-3xl"
+                )}
+              >
                 {resolvedEmptyStateText}
               </p>
+              {quickActions.length > 0 && !isCenteredEmpty ? (
+                <div className="mx-auto mt-8 flex max-w-4xl flex-wrap items-center justify-center gap-3">
+                  {quickActions.map((action) => (
+                    <Button
+                      key={action.id}
+                      type="button"
+                      variant="outline"
+                      className="rounded-full px-4"
+                      onClick={action.onClick}
+                    >
+                      {action.label}
+                    </Button>
+                  ))}
+                </div>
+              ) : null}
             </div>
           )}
 
@@ -946,9 +1423,14 @@ Reglas:
                 msg.role === "user"
                   ? "ml-4 border border-violet-500/12 bg-violet-500/10"
                   : "mr-4 border bg-muted/70"
+                ,
+                isCleanChat &&
+                  (msg.role === "user"
+                    ? "ml-auto mr-0 max-w-2xl rounded-[2rem] border-0 bg-muted/70 px-5 py-4 shadow-none"
+                    : "mr-0 max-w-3xl border-0 bg-transparent px-0 py-0 shadow-none")
               )}
             >
-              <div className="flex items-start justify-between gap-2">
+              <div className={cn("flex items-start justify-between gap-2", isCleanChat && msg.role === "assistant" && "mb-2")}>
                 <div className="flex items-center gap-1.5 mb-1.5">
                   {msg.role === "assistant" ? (
                     <Sparkles className="h-3 w-3 text-violet-500" />
@@ -973,11 +1455,15 @@ Reglas:
                   </button>
                 )}
               </div>
-              <p className="whitespace-pre-wrap text-sm leading-7">
-                {msg.content}
-              </p>
+              {msg.role === "assistant" ? (
+                <MarkdownMessage content={msg.content} />
+              ) : (
+                <p className={cn("whitespace-pre-wrap text-sm leading-7", isCleanChat && "text-[15px] leading-8")}>
+                  {msg.content}
+                </p>
+              )}
               {msg.role === "assistant" && msg.responseType && (
-                <div className="mt-3 flex flex-wrap items-center gap-2">
+                <div className={cn("mt-3 flex flex-wrap items-center gap-2", isCleanChat && "mt-5")}>
                   <span
                     className={cn(
                       "inline-flex rounded-full border px-2 py-1 text-[10px] font-medium",
@@ -1111,7 +1597,7 @@ Reglas:
           ))}
 
           {isLoading && (
-            <div className="mr-4 rounded-2xl border bg-muted/65 p-3.5">
+            <div className={cn("mr-4 rounded-2xl border bg-muted/65 p-3.5", isCleanChat && "mr-0 max-w-3xl border-0 bg-transparent px-0")}>
               <div className="flex items-center gap-1.5 mb-1.5">
                 <Sparkles className="h-3 w-3 text-violet-500 animate-pulse" />
                 <span className="text-xs font-medium text-muted-foreground">
@@ -1129,13 +1615,19 @@ Reglas:
       </ScrollArea>
 
       {/* Input */}
-      <div className="shrink-0 border-t bg-background/82 p-3 pb-[calc(env(safe-area-inset-bottom)+0.75rem)]">
-        {typeof budgetProgress === "number" ? (
+      <div
+        className={cn(
+          "shrink-0 border-t bg-background/82 p-3 pb-[calc(env(safe-area-inset-bottom)+0.75rem)]",
+          isCleanChat && "border-t-0 bg-transparent px-0 pb-[calc(env(safe-area-inset-bottom)+1rem)]"
+        )}
+      >
+        {typeof budgetProgress === "number" && !isCenteredEmpty ? (
           <div
             className={cn(
               "mb-3 rounded-2xl border bg-card/70 px-3 py-2.5",
               budgetState === "warning" && "border-amber-300 bg-amber-50/70 dark:bg-amber-500/10",
-              budgetState === "exceeded" && "border-rose-300 bg-rose-50/70 dark:bg-rose-500/10"
+              budgetState === "exceeded" && "border-rose-300 bg-rose-50/70 dark:bg-rose-500/10",
+              isCleanChat && "mx-auto w-full max-w-4xl rounded-full bg-background/70"
             )}
           >
             <div className="mb-1.5 flex items-center justify-between gap-2 text-[11px] text-muted-foreground">
@@ -1172,7 +1664,7 @@ Reglas:
           }}
         />
         {composerAttachments.length > 0 ? (
-          <div className="mb-3 flex flex-wrap gap-2">
+          <div className={cn("mb-3 flex flex-wrap gap-2", isCleanChat && "mx-auto w-full max-w-4xl")}>
             {composerAttachments.map((attachment) => (
               <div
                 key={attachment.id}
@@ -1191,10 +1683,26 @@ Reglas:
             ))}
           </div>
         ) : null}
+        {messages.length > 0 && quickActions.length > 0 && isCleanChat ? (
+          <div className="mx-auto mb-3 flex w-full max-w-4xl gap-2 overflow-x-auto pb-1">
+            {quickActions.map((action) => (
+              <Button
+                key={action.id}
+                type="button"
+                variant="ghost"
+                className="shrink-0 rounded-full border px-3 text-xs text-muted-foreground"
+                onClick={action.onClick}
+              >
+                {action.label}
+              </Button>
+            ))}
+          </div>
+        ) : null}
         <div
           className={cn(
             "rounded-3xl transition-colors",
-            isDragOverComposer && "bg-violet-500/8 ring-2 ring-violet-400/40 ring-offset-2 ring-offset-background"
+            isDragOverComposer && "bg-violet-500/8 ring-2 ring-violet-400/40 ring-offset-2 ring-offset-background",
+            isCenteredEmpty && "mt-3"
           )}
           onDrop={(event) => {
             void handleComposerDrop(event);
@@ -1202,63 +1710,123 @@ Reglas:
           onDragOver={handleComposerDragOver}
           onDragLeave={handleComposerDragLeave}
         >
-          <div className="rounded-[1.75rem] border bg-card/75 px-4 pt-3 pb-3">
-            <Textarea
-              placeholder={resolvedInputPlaceholder}
-              value={prompt}
-              onChange={(e) => setPrompt(e.target.value)}
-              onPaste={(event) => {
-                void handleComposerPaste(event);
-              }}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" && !e.shiftKey) {
-                  e.preventDefault();
-                  handleSend();
-                }
-              }}
-              rows={2}
-              className="min-h-20 w-full resize-none border-none bg-transparent px-0 pt-0 pb-2 text-sm shadow-none focus-visible:border-none focus-visible:ring-0"
-            />
-            <div className="flex items-center gap-2">
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon"
-                className="h-8 w-8 rounded-full text-muted-foreground hover:bg-background/70 hover:text-foreground"
-                onClick={() => attachmentInputRef.current?.click()}
-                disabled={isPreparingAttachments || isLoading}
-                aria-label="Adjuntar archivos"
-                title="Adjuntar archivos"
-              >
-                <Plus className="h-4 w-4" />
-              </Button>
+          {isCleanChat ? (
+            <div className="mx-auto w-full max-w-5xl">
+              <div className="flex items-end gap-3 rounded-[2rem] border border-zinc-700/35 bg-zinc-800/95 px-5 py-4 shadow-[0_18px_60px_rgba(15,23,42,0.08)]">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  className="mb-1 h-10 w-10 shrink-0 rounded-full text-zinc-400 hover:bg-white/5 hover:text-white"
+                  onClick={() => attachmentInputRef.current?.click()}
+                  disabled={isPreparingAttachments || isLoading}
+                  aria-label="Adjuntar archivos"
+                  title="Adjuntar archivos"
+                >
+                  <Plus className="h-5 w-5" />
+                </Button>
+                <Textarea
+                  placeholder={resolvedInputPlaceholder}
+                  value={prompt}
+                  onChange={(e) => setPrompt(e.target.value)}
+                  onPaste={(event) => {
+                    void handleComposerPaste(event);
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && !e.shiftKey) {
+                      e.preventDefault();
+                      handleSend();
+                    }
+                  }}
+                  rows={1}
+                  className="min-h-12 flex-1 resize-none border-none !bg-transparent dark:!bg-transparent px-0 py-1 text-base leading-7 text-white shadow-none placeholder:text-zinc-500 focus-visible:border-none focus-visible:ring-0"
+                />
+                <div className="shrink-0 pl-2">
+                  <Button
+                    onClick={() => {
+                      void handleSend();
+                    }}
+                    size="icon"
+                    disabled={(!prompt.trim() && composerAttachments.length === 0) || isLoading || isPreparingAttachments}
+                    className="h-11 w-11 rounded-full bg-zinc-200 text-zinc-900 hover:bg-zinc-100"
+                  >
+                    <Send className="h-4 w-4" />
+                  </Button>
+                </div>
+              </div>
+              {(isPreparingAttachments || composerAttachments.length > 0) && (
+                <div className="mt-3 flex items-center gap-2 px-2 text-xs text-muted-foreground">
+                  {isPreparingAttachments ? (
+                    <span>Preparando adjuntos...</span>
+                  ) : (
+                    <span>
+                      {composerAttachments.length} adjunto{composerAttachments.length === 1 ? "" : "s"}
+                    </span>
+                  )}
+                </div>
+              )}
             </div>
-          </div>
-        </div>
-        <div className="mt-3 flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <Badge variant="outline" className="text-xs">
-              {fixedMode ? resolvedPanelTitle : "Auto"}
-            </Badge>
-            {isPreparingAttachments ? (
-              <span className="text-[11px] text-muted-foreground">Preparando adjuntos...</span>
-            ) : composerAttachments.length > 0 ? (
-              <span className="text-[11px] text-muted-foreground">
-                {composerAttachments.length} adjunto{composerAttachments.length === 1 ? "" : "s"}
-              </span>
-            ) : null}
-          </div>
-          <Button
-            onClick={() => {
-              void handleSend();
-            }}
-            size="sm"
-            disabled={(!prompt.trim() && composerAttachments.length === 0) || isLoading || isPreparingAttachments}
-            className="h-8 rounded-xl bg-gradient-to-r from-violet-600 to-indigo-700 text-xs text-white"
-          >
-            <Send className="h-3 w-3 mr-1" />
-            Enviar
-          </Button>
+          ) : (
+            <>
+              <div className="rounded-[1.75rem] border bg-card/75 px-4 pt-3 pb-3">
+                <Textarea
+                  placeholder={resolvedInputPlaceholder}
+                  value={prompt}
+                  onChange={(e) => setPrompt(e.target.value)}
+                  onPaste={(event) => {
+                    void handleComposerPaste(event);
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && !e.shiftKey) {
+                      e.preventDefault();
+                      handleSend();
+                    }
+                  }}
+                  rows={2}
+                  className="min-h-20 w-full resize-none border-none bg-transparent px-0 pt-0 pb-2 text-sm shadow-none focus-visible:border-none focus-visible:ring-0"
+                />
+                <div className="flex items-center gap-2">
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    className="h-8 w-8 rounded-full text-muted-foreground hover:bg-background/70 hover:text-foreground"
+                    onClick={() => attachmentInputRef.current?.click()}
+                    disabled={isPreparingAttachments || isLoading}
+                    aria-label="Adjuntar archivos"
+                    title="Adjuntar archivos"
+                  >
+                    <Plus className="h-4 w-4" />
+                  </Button>
+                </div>
+              </div>
+              <div className="mt-3 flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Badge variant="outline" className="text-xs">
+                    {fixedMode ? resolvedPanelTitle : "Auto"}
+                  </Badge>
+                  {isPreparingAttachments ? (
+                    <span className="text-[11px] text-muted-foreground">Preparando adjuntos...</span>
+                  ) : composerAttachments.length > 0 ? (
+                    <span className="text-[11px] text-muted-foreground">
+                      {composerAttachments.length} adjunto{composerAttachments.length === 1 ? "" : "s"}
+                    </span>
+                  ) : null}
+                </div>
+                <Button
+                  onClick={() => {
+                    void handleSend();
+                  }}
+                  size="sm"
+                  disabled={(!prompt.trim() && composerAttachments.length === 0) || isLoading || isPreparingAttachments}
+                  className="h-8 rounded-xl bg-gradient-to-r from-violet-600 to-indigo-700 text-xs text-white"
+                >
+                  <Send className="h-3 w-3 mr-1" />
+                  Enviar
+                </Button>
+              </div>
+            </>
+          )}
         </div>
       </div>
     </div>

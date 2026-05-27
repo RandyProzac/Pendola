@@ -3,22 +3,18 @@
 import { use, useCallback, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
-  ArrowRight,
   BookOpen,
   Compass,
   FileText,
   Files,
-  Paperclip,
   ShieldAlert,
   Sparkles,
   WandSparkles,
 } from "lucide-react";
 import { SidebarTrigger } from "@/components/ui/sidebar";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import { AIPanel } from "@/components/editor/ai-panel";
 import { buildProjectContext, resolveProjectContextMode } from "@/lib/ai/context";
-import { AI_MODE_CONFIG } from "@/lib/ai/modes";
 import type { AIMode } from "@/lib/types";
 import { makeBookPath, makeEditorialBookPath, resolveEntityId } from "@/lib/routing";
 import { useProjectStore } from "@/lib/store";
@@ -44,13 +40,13 @@ const PROJECT_AUDIT_QUICK_ACTIONS: Array<{
 Quiero una respuesta breve, por tandas.
 Entrega solo los 3 hallazgos más prioritarios en este bloque.
 
-Usa esta estructura:
-- Hallazgos críticos
-- Incongruencias o contradicciones
-- Huecos de causalidad
-- Personajes con motivación débil o inconsistente
-- Preguntas abiertas que el texto deja sin resolver
-- Recomendaciones concretas
+Usa markdown claro con esta estructura:
+## Hallazgos críticos
+## Incongruencias o contradicciones
+## Huecos de causalidad
+## Personajes con motivación débil o inconsistente
+## Preguntas abiertas que el texto deja sin resolver
+## Recomendaciones concretas
 
 Cita libro, capítulo y personaje o escenario implicado cuando sea posible.
 No escribas una respuesta larga.
@@ -72,11 +68,11 @@ Necesito una revisión global del manuscrito con foco en:
 Entrega solo 3 hallazgos prioritarios en esta respuesta.
 Sé concreto y breve.
 
-Respóndeme con:
-- Hallazgos críticos
-- Huecos de causalidad
-- Preguntas abiertas sin resolver
-- Recomendaciones concretas
+Respóndeme en markdown con:
+## Hallazgos críticos
+## Huecos de causalidad
+## Preguntas abiertas sin resolver
+## Recomendaciones concretas
 
 Al final añade: "Si quieres, sigo con la siguiente tanda."`,
   },
@@ -95,11 +91,11 @@ Quiero que detectes:
 
 Entrega solo 3 hallazgos prioritarios en este bloque.
 
-Responde con:
-- Hallazgos críticos
-- Personajes con motivación débil o inconsistente
-- Incongruencias o contradicciones
-- Recomendaciones concretas
+Responde en markdown con:
+## Hallazgos críticos
+## Personajes con motivación débil o inconsistente
+## Incongruencias o contradicciones
+## Recomendaciones concretas
 
 Al final añade: "Si quieres, sigo con la siguiente tanda."`,
   },
@@ -115,12 +111,12 @@ Quiero que evalúes reglas, atmósferas, límites, capacidades, consecuencias y 
 Entrega solo 3 hallazgos prioritarios.
 No te extiendas.
 
-Devuelve:
-- Hallazgos críticos
-- Incongruencias o contradicciones
-- Huecos de causalidad
-- Preguntas abiertas que el texto deja sin resolver
-- Recomendaciones concretas
+Devuelve en markdown:
+## Hallazgos críticos
+## Incongruencias o contradicciones
+## Huecos de causalidad
+## Preguntas abiertas que el texto deja sin resolver
+## Recomendaciones concretas
 
 Al final añade: "Si quieres, sigo con la siguiente tanda."`,
   },
@@ -140,11 +136,11 @@ Quiero detectar:
 Entrega solo 3 hallazgos prioritarios en esta respuesta.
 Sé directo.
 
-Responde con:
-- Hallazgos críticos
-- Huecos de causalidad
-- Preguntas abiertas
-- Recomendaciones concretas
+Responde en markdown con:
+## Hallazgos críticos
+## Huecos de causalidad
+## Preguntas abiertas
+## Recomendaciones concretas
 
 Al final añade: "Si quieres, sigo con la siguiente tanda."`,
   },
@@ -206,27 +202,18 @@ export default function IAProjectPage({ params }: PageProps) {
       mode,
     });
   }, []);
-
-  const modeHighlights = [
-    {
-      key: "copiloto",
-      title: "Copiloto",
-      description: AI_MODE_CONFIG.copiloto.emptyState,
-    },
-    {
-      key: "ideas",
-      title: "Ideas",
-      description: AI_MODE_CONFIG.ideas.emptyState,
-    },
-    {
-      key: "revision",
-      title: "Revisión",
-      description: AI_MODE_CONFIG.revision.emptyState,
-    },
-  ] as const;
+  const quickActions = useMemo(
+    () =>
+      PROJECT_AUDIT_QUICK_ACTIONS.map((action) => ({
+        id: action.key,
+        label: action.label,
+        onClick: () => launchAuditPrompt(action.prompt, action.mode),
+      })),
+    [launchAuditPrompt]
+  );
 
   return (
-    <div className="flex min-h-screen flex-col bg-muted/10">
+    <div className="flex min-h-screen flex-col bg-background">
       <header className="sticky top-0 z-40 border-b bg-background/95 backdrop-blur">
         <div className="flex h-auto flex-wrap items-center gap-3 px-4 py-3 sm:h-14 sm:flex-nowrap sm:px-6 sm:py-0">
           <SidebarTrigger />
@@ -259,144 +246,21 @@ export default function IAProjectPage({ params }: PageProps) {
         </div>
       </header>
 
-      <div className="flex-1 p-4 md:p-8">
-        <div className="mx-auto grid max-w-7xl gap-6 xl:grid-cols-[1.02fr_0.98fr]">
-          <section className="space-y-6">
-            <div className="rounded-[1.75rem] border bg-[radial-gradient(circle_at_top_right,rgba(139,92,246,0.16),transparent_34%),linear-gradient(180deg,rgba(255,255,255,0.96),rgba(248,250,252,0.94))] p-6 shadow-[0_18px_60px_rgba(15,23,42,0.08)] dark:bg-[radial-gradient(circle_at_top_right,rgba(139,92,246,0.2),transparent_36%),linear-gradient(180deg,rgba(15,23,42,0.92),rgba(15,23,42,0.88))]">
-              <div className="flex items-start gap-4">
-                <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-violet-500/12 text-violet-500">
-                  <WandSparkles className="h-5 w-5" />
-                </div>
-                <div className="space-y-2">
-                  <p className="text-xs font-semibold uppercase tracking-[0.24em] text-violet-700/80 dark:text-violet-300/80">
-                    IA del proyecto
-                  </p>
-                  <h2 className="text-2xl font-semibold tracking-tight">
-                    Conversa con Péndola desde la perspectiva completa del proyecto.
-                  </h2>
-                  <p className="max-w-3xl text-sm leading-7 text-muted-foreground">
-                    Esta mesa sirve para pedir ideas, diagnosticar bloqueos o revisar decisiones narrativas
-                    sin depender de un capítulo concreto. El chat normal usa memoria global resumida;
-                    las auditorías profundas leen el proyecto completo antes de devolverte hallazgos.
-                  </p>
-                </div>
-              </div>
+      <div className="flex-1 px-4 py-6 md:px-6 md:py-8">
+        <div className="mx-auto flex max-w-6xl flex-col gap-5">
+          <div className="flex flex-wrap items-end justify-between gap-3">
+            <div className="max-w-3xl">
+              <h2 className="text-2xl font-semibold tracking-tight md:text-3xl">
+                Conversa libremente con Péndola sobre el proyecto completo.
+              </h2>
+              <p className="mt-2 text-sm leading-7 text-muted-foreground">
+                Sin paneles de instrucciones ni cajas pesadas. Solo conversación, auditorías por tandas
+                y respuestas jerárquicas cuando haga falta profundidad.
+              </p>
             </div>
+          </div>
 
-            <div className="grid gap-4 sm:grid-cols-3">
-              <div className="rounded-2xl border bg-card/70 p-4">
-                <p className="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">
-                  Recursos
-                </p>
-                <p className="mt-2 text-2xl font-semibold">{resources.length}</p>
-                <p className="mt-2 text-xs leading-6 text-muted-foreground">
-                  Archivos que la IA puede tener presentes como contexto real.
-                </p>
-              </div>
-              <div className="rounded-2xl border bg-card/70 p-4">
-                <p className="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">
-                  Personajes
-                </p>
-                <p className="mt-2 text-2xl font-semibold">{characters.length}</p>
-                <p className="mt-2 text-xs leading-6 text-muted-foreground">
-                  Voces, impulsos y tensiones que ya forman parte del proyecto.
-                </p>
-              </div>
-              <div className="rounded-2xl border bg-card/70 p-4">
-                <p className="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">
-                  Escenarios
-                </p>
-                <p className="mt-2 text-2xl font-semibold">{scenarios.length}</p>
-                <p className="mt-2 text-xs leading-6 text-muted-foreground">
-                  Lugares y atmósferas disponibles para pensar escenas y estructura.
-                </p>
-              </div>
-            </div>
-
-            <div className="grid gap-4 md:grid-cols-3">
-              {modeHighlights.map((mode) => (
-                <div key={mode.key} className="rounded-2xl border bg-card/70 p-4">
-                  <p className="text-sm font-semibold">{mode.title}</p>
-                  <p className="mt-2 text-sm leading-6 text-muted-foreground">
-                    {mode.description}
-                  </p>
-                </div>
-              ))}
-            </div>
-
-            <div className="rounded-2xl border bg-card/70 p-5">
-              <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-                <div>
-                  <p className="text-sm font-semibold">Auditoría narrativa profunda</p>
-                  <p className="mt-1 text-sm leading-6 text-muted-foreground">
-                    Dispara revisiones globales del proyecto para buscar contradicciones, huecos de guion,
-                    continuidad floja o problemas de ritmo. Cada auditoría responde por bloques cortos,
-                    no como un informe gigante, para ahorrar tokens y mantener foco.
-                  </p>
-                </div>
-                <Badge variant="outline" className="text-xs">
-                  Solo este proyecto
-                </Badge>
-              </div>
-              <div className="mt-4 grid gap-2 sm:grid-cols-2">
-                {PROJECT_AUDIT_QUICK_ACTIONS.map((action) => {
-                  const Icon = action.icon;
-                  return (
-                    <Button
-                      key={action.key}
-                      type="button"
-                      variant="outline"
-                      className="justify-start rounded-xl px-4 py-5 text-left"
-                      onClick={() => launchAuditPrompt(action.prompt, action.mode)}
-                    >
-                      <Icon className="mr-2 h-4 w-4 shrink-0" />
-                      {action.label}
-                    </Button>
-                  );
-                })}
-              </div>
-            </div>
-
-            <div className="rounded-2xl border bg-card/70 p-5">
-              <div className="flex items-start justify-between gap-4">
-                <div>
-                  <p className="text-sm font-semibold">Contexto disponible para la IA</p>
-                  <p className="mt-1 text-sm leading-6 text-muted-foreground">
-                    La mesa IA global usa un workspace propio por proyecto. Eso evita que los chats de capítulos
-                    aparezcan aquí y refuerza que ninguna conversación de otro proyecto contamine este análisis.
-                  </p>
-                </div>
-                <Badge variant="outline" className="text-xs">Proyecto completo</Badge>
-              </div>
-              <div className="mt-4 flex flex-wrap gap-2">
-                <Button
-                  variant="outline"
-                  className="rounded-xl"
-                  onClick={() => router.push(`/proyecto/${projectSegment}/personalizacion`)}
-                >
-                  Ajustar memoria global
-                  <ArrowRight className="ml-2 h-4 w-4" />
-                </Button>
-                <Button
-                  variant="outline"
-                  className="rounded-xl"
-                  onClick={() => router.push(`/proyecto/${projectSegment}/recursos`)}
-                >
-                  <Paperclip className="mr-2 h-4 w-4" />
-                  Gestionar recursos
-                </Button>
-              </div>
-              {firstChapter ? (
-                <p className="mt-4 text-xs leading-6 text-muted-foreground">
-                  Si luego quieres insertar texto directo en un capítulo, abre{" "}
-                  <span className="font-medium text-foreground">{firstChapter.title}</span> desde
-                  `Escribir` o `Editorial`.
-                </p>
-              ) : null}
-            </div>
-          </section>
-
-          <section className="min-h-[60dvh] overflow-hidden rounded-[1.75rem] border bg-card/70 shadow-[0_18px_60px_rgba(15,23,42,0.08)] xl:min-h-[720px]">
+          <section className="min-h-[68dvh] overflow-hidden">
             <AIPanel
               visible
               projectId={project.id}
@@ -407,11 +271,41 @@ export default function IAProjectPage({ params }: PageProps) {
               panelDescription="Ideas y diagnóstico del proyecto."
               assistantLabel="Péndola IA"
               inputPlaceholder="Pregunta por el proyecto completo, pide una auditoría o revisa coherencia, personajes, mundo y conflicto..."
-              emptyStateText="Abre una conversación global del proyecto o lanza una auditoría profunda. Este espacio está separado de los chats por capítulo."
+              emptyStateText="Conversa con tu proyecto."
               externalPromptRequest={externalPromptRequest ?? undefined}
+              quickActions={quickActions}
+              presentation="clean-chat"
               className="h-full w-full border-l-0 bg-transparent"
             />
           </section>
+
+          <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border/50 pt-3 text-xs text-muted-foreground/85">
+            <div className="flex flex-wrap items-center gap-3">
+              <span className="inline-flex items-center gap-1.5">
+                <WandSparkles className="h-3.5 w-3.5 text-violet-500" />
+                IA del proyecto
+              </span>
+              <span>{resources.length} recursos</span>
+              <span>{characters.length} personajes</span>
+              <span>{scenarios.length} escenarios</span>
+            </div>
+            <div className="flex flex-wrap items-center gap-3">
+              <button
+                type="button"
+                className="transition-colors hover:text-foreground"
+                onClick={() => router.push(`/proyecto/${projectSegment}/personalizacion`)}
+              >
+                Memoria global
+              </button>
+              <button
+                type="button"
+                className="transition-colors hover:text-foreground"
+                onClick={() => router.push(`/proyecto/${projectSegment}/recursos`)}
+              >
+                Recursos
+              </button>
+            </div>
+          </div>
         </div>
       </div>
     </div>
