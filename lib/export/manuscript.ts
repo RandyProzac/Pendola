@@ -58,6 +58,9 @@ function buildHtmlShell(input: {
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>${escapeHtml(input.title)} — ${escapeHtml(input.project.title)}</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=EB+Garamond:wght@400;500;600;700&display=swap" rel="stylesheet" />
     <style>
       :root {
         color-scheme: light;
@@ -67,6 +70,9 @@ function buildHtmlShell(input: {
         --muted: #6b7280;
         --border: rgba(24, 24, 27, 0.12);
         --accent: ${input.project.coverColor || '#6d28d9'};
+        --font-editorial: "EB Garamond", "Iowan Old Style", "Palatino Linotype", "Book Antiqua", Georgia, "Times New Roman", ui-serif, serif;
+        --font-heading: var(--font-editorial);
+        --font-body: var(--font-editorial);
       }
 
       * { box-sizing: border-box; }
@@ -77,7 +83,7 @@ function buildHtmlShell(input: {
           radial-gradient(circle at top, color-mix(in srgb, var(--accent) 18%, white), transparent 26%),
           var(--page-bg);
         color: var(--ink);
-        font-family: Georgia, "Times New Roman", serif;
+        font-family: var(--font-body);
       }
 
       main {
@@ -109,7 +115,9 @@ function buildHtmlShell(input: {
 
       h1 {
         margin: 0;
+        font-family: var(--font-heading);
         font-size: clamp(2rem, 4vw, 3.6rem);
+        font-weight: 700;
         line-height: 1.02;
       }
 
@@ -147,13 +155,16 @@ function buildHtmlShell(input: {
 
       .chapter-title {
         margin: 0 0 24px;
+        font-family: var(--font-heading);
         font-size: clamp(1.65rem, 2.6vw, 2.35rem);
+        font-weight: 700;
         line-height: 1.12;
       }
 
       .tiptap {
         max-width: 86ch;
         margin: 0 auto;
+        font-family: var(--font-body);
         font-size: 20px;
         line-height: 1.9;
         text-wrap: pretty;
@@ -161,9 +172,9 @@ function buildHtmlShell(input: {
       }
 
       .tiptap p { margin: 0 0 1.15em; }
-      .tiptap h1 { margin: 1.6em 0 0.7em; font-size: 1.8em; line-height: 1.12; }
-      .tiptap h2 { margin: 1.45em 0 0.65em; font-size: 1.45em; line-height: 1.16; }
-      .tiptap h3 { margin: 1.3em 0 0.6em; font-size: 1.2em; line-height: 1.18; }
+      .tiptap h1 { margin: 1.6em 0 0.7em; font-family: var(--font-heading); font-size: 1.8em; font-weight: 700; line-height: 1.12; }
+      .tiptap h2 { margin: 1.45em 0 0.65em; font-family: var(--font-heading); font-size: 1.45em; font-weight: 700; line-height: 1.16; }
+      .tiptap h3 { margin: 1.3em 0 0.6em; font-family: var(--font-heading); font-size: 1.2em; font-weight: 600; line-height: 1.18; }
       .tiptap ul, .tiptap ol { margin: 0 0 1.15em 1.4em; }
       .tiptap li { margin: 0.3em 0; }
       .tiptap blockquote {

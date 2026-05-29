@@ -80,6 +80,23 @@ function renderMarkdownToHtml(markdown: string) {
       return;
     }
 
+    const numberedHeadingMatch = line.match(/^(\d+)\.\s+(.+)$/);
+    if (
+      numberedHeadingMatch &&
+      !/[.;]$/.test(numberedHeadingMatch[2]) &&
+      numberedHeadingMatch[2].length <= 140
+    ) {
+      flushParagraph();
+      flushList();
+      flushOrderedList();
+      blocks.push(
+        `<h3 class="message-numbered-heading"><span class="message-numbered-index">${numberedHeadingMatch[1]}.</span> ${applyInlineFormatting(
+          numberedHeadingMatch[2]
+        )}</h3>`
+      );
+      return;
+    }
+
     if (/^---+$/.test(line)) {
       flushParagraph();
       flushList();
@@ -122,6 +139,15 @@ function renderMarkdownToHtml(markdown: string) {
       flushOrderedList();
       const label = labelParagraphMatch[1] || labelParagraphMatch[2] || labelParagraphMatch[3];
       const content = labelParagraphMatch[4];
+      const compactMetaLabels = ["Libro", "Capítulo", "Capitulo", "Personajes", "Escenario", "Escenarios"];
+      if (compactMetaLabels.includes(label)) {
+        blocks.push(
+          `<p class="message-meta"><strong>${applyInlineFormatting(label)}:</strong> ${applyInlineFormatting(
+            content
+          )}</p>`
+        );
+        return;
+      }
       blocks.push(
         `<div class="message-section"><h3>${applyInlineFormatting(
           label
@@ -152,13 +178,16 @@ export function MarkdownMessage({ content, className }: MarkdownMessageProps) {
         "prose prose-neutral dark:prose-invert max-w-none text-[15px] leading-8",
         "prose-headings:mb-3 prose-headings:mt-8 prose-headings:font-semibold prose-headings:tracking-tight",
         "prose-h1:mt-10 prose-h1:text-3xl prose-h1:leading-tight",
-        "prose-h2:border-b prose-h2:border-border/60 prose-h2:pb-2 prose-h2:text-2xl prose-h2:leading-tight",
-        "prose-h3:text-xl prose-h3:leading-snug prose-h3:text-foreground/95",
-        "prose-p:my-4 prose-p:text-foreground/95 prose-ul:my-4 prose-ul:pl-6 prose-ol:my-4 prose-ol:pl-6 prose-li:my-1.5",
+        "prose-h2:border-b prose-h2:border-border/60 prose-h2:pb-2 prose-h2:text-[2rem] prose-h2:leading-tight",
+        "prose-h3:text-[1.7rem] prose-h3:leading-snug prose-h3:text-foreground/95",
+        "prose-p:my-4 prose-p:text-[1.08rem] prose-p:leading-8 prose-p:text-foreground/95 prose-ul:my-5 prose-ul:pl-7 prose-ol:my-5 prose-ol:pl-7 prose-li:my-2 prose-li:pl-1 prose-li:leading-8",
         "prose-strong:font-semibold prose-code:rounded prose-code:bg-muted prose-code:px-1.5 prose-code:py-0.5 prose-code:text-[0.9em]",
         "prose-blockquote:border-l-2 prose-blockquote:border-border prose-blockquote:pl-4 prose-blockquote:text-muted-foreground",
         "prose-hr:my-8 prose-hr:border-border/60",
-        "[&_.message-section]:my-6 [&_.message-section_h3]:mb-2 [&_.message-section_h3]:text-xl [&_.message-section_h3]:font-semibold [&_.message-section_h3]:tracking-tight [&_.message-section_h3]:text-foreground [&_.message-section_p]:my-0 [&_.message-section_p]:text-foreground/95",
+        "[&_.message-section]:my-7 [&_.message-section_h3]:mb-2 [&_.message-section_h3]:text-[1.7rem] [&_.message-section_h3]:font-semibold [&_.message-section_h3]:tracking-tight [&_.message-section_h3]:text-foreground [&_.message-section_p]:my-0 [&_.message-section_p]:text-[1.08rem] [&_.message-section_p]:leading-8 [&_.message-section_p]:text-foreground/95",
+        "[&_.message-numbered-heading]:mb-4 [&_.message-numbered-heading]:mt-10 [&_.message-numbered-heading]:text-[2.25rem] [&_.message-numbered-heading]:font-semibold [&_.message-numbered-heading]:leading-tight [&_.message-numbered-heading]:tracking-tight",
+        "[&_.message-numbered-index]:mr-2 [&_.message-numbered-index]:text-foreground/95",
+        "[&_.message-meta]:my-1 [&_.message-meta]:text-[1rem] [&_.message-meta]:leading-7 [&_.message-meta]:text-foreground/90 [&_.message-meta_strong]:font-semibold",
         className
       )}
       dangerouslySetInnerHTML={{ __html: renderMarkdownToHtml(content) }}

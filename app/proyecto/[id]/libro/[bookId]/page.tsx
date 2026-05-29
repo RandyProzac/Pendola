@@ -5,6 +5,8 @@ import { useRouter, useSearchParams } from "next/navigation";
 import {
   BookOpen,
   CalendarDays,
+  ChevronLeft,
+  ChevronRight,
   ChevronDown,
   ChevronUp,
   Cloud,
@@ -278,6 +280,7 @@ export default function BookPage({ params }: PageProps) {
   const [mobileAIOpen, setMobileAIOpen] = useState(false);
   const [isFocusMode, setIsFocusMode] = useState(false);
   const [isHeaderCollapsed, setIsHeaderCollapsed] = useState(false);
+  const [isChapterSidebarCollapsed, setIsChapterSidebarCollapsed] = useState(false);
   const [viewMode, setViewMode] = useState<BookViewMode>("write");
   const [versionsOpen, setVersionsOpen] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
@@ -329,6 +332,8 @@ export default function BookPage({ params }: PageProps) {
     !!path && resources.some((resource) => resource.mediaPath === path);
   const headerPreferenceKey =
     projectId && bookId ? `pendola:writing-header-collapsed:v2:${projectId}:${bookId}` : null;
+  const chapterSidebarPreferenceKey =
+    projectId && bookId ? `pendola:writing-chapter-sidebar-collapsed:v1:${projectId}:${bookId}` : null;
   const workspaceSessionKey =
     projectId && bookId ? `pendola:workspace:writing:${projectId}:${bookId}` : null;
 
@@ -353,6 +358,13 @@ export default function BookPage({ params }: PageProps) {
   }, [headerPreferenceKey]);
 
   useEffect(() => {
+    if (!chapterSidebarPreferenceKey) return;
+
+    const storedValue = window.localStorage.getItem(chapterSidebarPreferenceKey);
+    setIsChapterSidebarCollapsed(storedValue === "true");
+  }, [chapterSidebarPreferenceKey]);
+
+  useEffect(() => {
     if (!workspaceSessionKey) return;
     setResumeState(loadWorkspaceResumeState(workspaceSessionKey));
   }, [workspaceSessionKey]);
@@ -374,6 +386,14 @@ export default function BookPage({ params }: PageProps) {
     if (!headerPreferenceKey) return;
     window.localStorage.setItem(headerPreferenceKey, String(isHeaderCollapsed));
   }, [headerPreferenceKey, isHeaderCollapsed]);
+
+  useEffect(() => {
+    if (!chapterSidebarPreferenceKey) return;
+    window.localStorage.setItem(
+      chapterSidebarPreferenceKey,
+      String(isChapterSidebarCollapsed)
+    );
+  }, [chapterSidebarPreferenceKey, isChapterSidebarCollapsed]);
 
   const effectiveSelectedChapterId =
     selectedChapterId && chapters.some((chapter) => chapter.id === selectedChapterId)
@@ -1385,129 +1405,166 @@ export default function BookPage({ params }: PageProps) {
       )}
 
       <div className="flex flex-1 overflow-hidden">
-        <aside
-          className={`hidden w-[260px] shrink-0 border-r bg-muted/20 xl:flex xl:flex-col ${
-            isFocusMode ? "!hidden" : ""
-          }`}
-        >
-          <div className="flex h-full flex-col">
-            <div className="border-b px-4 py-4">
-              <div className="flex items-center gap-2">
-                <BookOpen className="h-4 w-4 text-violet-500" />
-                <Input
-                  value={book.title}
-                  onChange={(event) =>
-                    updateBook(bookId, { title: event.target.value })
-                  }
-                  className="h-8 border-none bg-transparent px-0 text-sm font-semibold shadow-none focus-visible:ring-0"
-                  placeholder="Título del libro"
-                />
-              </div>
-              <p className="mt-2 text-xs leading-5 text-muted-foreground">
-                {project.premise?.trim()
-                  ? project.premise
-                  : "Proyecto listo para escribir. Puedes usar la IA como apoyo o ignorarla por completo."}
-              </p>
-            </div>
-
-            <div className="flex min-h-0 flex-1 flex-col">
-              <section className="flex min-h-0 flex-1 flex-col px-3 py-4">
-                <div className="mb-3 flex items-center justify-between px-1">
-                  <div>
-                    <p className="text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">
-                      Capítulos
-                    </p>
-                    <p className="text-[11px] text-muted-foreground">
-                      {chapters.length} en este libro
+        {!isFocusMode && !isChapterSidebarCollapsed ? (
+          <aside className="hidden w-[260px] shrink-0 border-r bg-muted/20 xl:flex xl:flex-col">
+            <div className="flex h-full flex-col">
+              <div className="border-b px-4 py-4">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2">
+                      <BookOpen className="h-4 w-4 text-violet-500" />
+                      <Input
+                        value={book.title}
+                        onChange={(event) =>
+                          updateBook(bookId, { title: event.target.value })
+                        }
+                        className="h-8 border-none bg-transparent px-0 text-sm font-semibold shadow-none focus-visible:ring-0"
+                        placeholder="Título del libro"
+                      />
+                    </div>
+                    <p className="mt-2 text-xs leading-5 text-muted-foreground">
+                      {project.premise?.trim()
+                        ? project.premise
+                        : "Proyecto listo para escribir. Puedes usar la IA como apoyo o ignorarla por completo."}
                     </p>
                   </div>
                   <Button
-                    variant="secondary"
-                    size="sm"
-                    className="h-8 gap-1 rounded-xl"
-                    onClick={handleNewChapter}
+                    type="button"
+                    variant="ghost"
+                    size="icon-sm"
+                    className="mt-0.5 rounded-full"
+                    onClick={() => setIsChapterSidebarCollapsed(true)}
+                    aria-label="Colapsar panel de capítulos"
+                    title="Colapsar panel de capítulos"
                   >
-                    <Plus className="h-3.5 w-3.5" />
-                    Nuevo
+                    <ChevronLeft className="h-4 w-4" />
                   </Button>
                 </div>
+              </div>
 
-                <ScrollArea className="min-h-0 flex-1 pr-1">
-                  <div className="space-y-2 pb-3">
-                    {chapters.length === 0 ? (
-                      <button
-                        type="button"
-                        onClick={handleNewChapter}
-                        className="flex w-full flex-col items-center rounded-2xl border border-dashed px-4 py-6 text-center transition-colors hover:border-violet-500/40 hover:bg-violet-500/5"
-                      >
-                        <FileText className="mb-2 h-8 w-8 text-muted-foreground/40" />
-                        <span className="text-sm font-medium">Crear primer capítulo</span>
-                        <span className="mt-1 text-xs text-muted-foreground">
-                          Empieza a escribir desde cero.
-                        </span>
-                      </button>
-                    ) : (
-                      chapters.map((chapter) => {
-                        const isActive = chapter.id === effectiveSelectedChapterId;
-                        const statusInfo = STATUS_CONFIG[chapter.status];
+              <div className="flex min-h-0 flex-1 flex-col">
+                <section className="flex min-h-0 flex-1 flex-col px-3 py-4">
+                  <div className="mb-3 flex items-center justify-between px-1">
+                    <div>
+                      <p className="text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+                        Capítulos
+                      </p>
+                      <p className="text-[11px] text-muted-foreground">
+                        {chapters.length} en este libro
+                      </p>
+                    </div>
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      className="h-8 gap-1 rounded-xl"
+                      onClick={handleNewChapter}
+                    >
+                      <Plus className="h-3.5 w-3.5" />
+                      Nuevo
+                    </Button>
+                  </div>
 
-                        return (
-                          <div
-                            key={chapter.id}
-                            className={`group rounded-xl border px-3 py-2.5 transition-all ${
-                              isActive
-                                ? "border-violet-500/40 bg-violet-500/8 shadow-sm"
-                                : "border-transparent bg-background/70 hover:border-border hover:bg-background"
-                            }`}
-                          >
+                  <ScrollArea className="min-h-0 flex-1 pr-1">
+                    <div className="space-y-2 pb-3">
+                      {chapters.length === 0 ? (
+                        <button
+                          type="button"
+                          onClick={handleNewChapter}
+                          className="flex w-full flex-col items-center rounded-2xl border border-dashed px-4 py-6 text-center transition-colors hover:border-violet-500/40 hover:bg-violet-500/5"
+                        >
+                          <FileText className="mb-2 h-8 w-8 text-muted-foreground/40" />
+                          <span className="text-sm font-medium">Crear primer capítulo</span>
+                          <span className="mt-1 text-xs text-muted-foreground">
+                            Empieza a escribir desde cero.
+                          </span>
+                        </button>
+                      ) : (
+                        chapters.map((chapter) => {
+                          const isActive = chapter.id === effectiveSelectedChapterId;
+                          const statusInfo = STATUS_CONFIG[chapter.status];
+
+                          return (
                             <div
-                              role="button"
-                              tabIndex={0}
-                              onClick={() => handleSelectChapter(chapter.id)}
-                              onKeyDown={(event) => {
-                                if (event.key === "Enter") {
-                                  handleSelectChapter(chapter.id);
-                                }
-                              }}
-                              className="cursor-pointer"
+                              key={chapter.id}
+                              className={`group rounded-xl border px-3 py-2.5 transition-all ${
+                                isActive
+                                  ? "border-violet-500/40 bg-violet-500/8 shadow-sm"
+                                  : "border-transparent bg-background/70 hover:border-border hover:bg-background"
+                              }`}
                             >
-                              <div className="flex items-start justify-between gap-3">
-                                <div className="min-w-0">
-                                  <div className="flex items-center gap-2">
-                                    <div
-                                      className={`h-2 w-2 rounded-full ${statusInfo.color}`}
-                                    />
-                                    <p className="truncate text-sm font-medium">
-                                      {chapter.title}
+                              <div
+                                role="button"
+                                tabIndex={0}
+                                onClick={() => handleSelectChapter(chapter.id)}
+                                onKeyDown={(event) => {
+                                  if (event.key === "Enter") {
+                                    handleSelectChapter(chapter.id);
+                                  }
+                                }}
+                                className="cursor-pointer"
+                              >
+                                <div className="flex items-start justify-between gap-3">
+                                  <div className="min-w-0">
+                                    <div className="flex items-center gap-2">
+                                      <div
+                                        className={`h-2 w-2 rounded-full ${statusInfo.color}`}
+                                      />
+                                      <p className="truncate text-sm font-medium">
+                                        {chapter.title}
+                                      </p>
+                                    </div>
+                                    <p className="mt-1 text-xs text-muted-foreground">
+                                      {chapter.wordCount} palabras
                                     </p>
                                   </div>
-                                  <p className="mt-1 text-xs text-muted-foreground">
-                                    {chapter.wordCount} palabras
-                                  </p>
+                                  <button
+                                    type="button"
+                                    className="rounded-lg p-1 text-muted-foreground opacity-0 transition-opacity hover:bg-destructive/10 hover:text-destructive group-hover:opacity-100"
+                                    onClick={(event) => {
+                                      event.stopPropagation();
+                                      setDeleteId(chapter.id);
+                                    }}
+                                  >
+                                    <Trash2 className="h-3.5 w-3.5" />
+                                  </button>
                                 </div>
-                                <button
-                                  type="button"
-                                  className="rounded-lg p-1 text-muted-foreground opacity-0 transition-opacity hover:bg-destructive/10 hover:text-destructive group-hover:opacity-100"
-                                  onClick={(event) => {
-                                    event.stopPropagation();
-                                    setDeleteId(chapter.id);
-                                  }}
-                                >
-                                  <Trash2 className="h-3.5 w-3.5" />
-                                </button>
                               </div>
                             </div>
-                          </div>
-                        );
-                      })
-                    )}
-                  </div>
-                </ScrollArea>
-              </section>
+                          );
+                        })
+                      )}
+                    </div>
+                  </ScrollArea>
+                </section>
+              </div>
+            </div>
+          </aside>
+        ) : null}
 
+        {!isFocusMode && isChapterSidebarCollapsed ? (
+          <div className="hidden w-14 shrink-0 border-r bg-background/85 xl:flex xl:flex-col">
+            <div className="flex h-full flex-col items-center gap-3 px-2 py-4">
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon-sm"
+                className="rounded-full"
+                onClick={() => setIsChapterSidebarCollapsed(false)}
+                aria-label="Expandir panel de capítulos"
+                title="Expandir panel de capítulos"
+              >
+                <ChevronRight className="h-4 w-4" />
+              </Button>
+              <div className="flex flex-col items-center gap-2 text-muted-foreground">
+                <BookOpen className="h-4 w-4 text-violet-500" />
+                <div className="h-12 w-px bg-border/70" />
+                <span className="[writing-mode:vertical-rl] rotate-180 text-[10px] font-semibold uppercase tracking-[0.24em]">
+                  Capítulos
+                </span>
+              </div>
             </div>
           </div>
-        </aside>
+        ) : null}
 
         <section className="relative flex min-w-0 flex-1 overflow-hidden bg-background">
           <div

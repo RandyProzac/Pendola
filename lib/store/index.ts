@@ -69,7 +69,7 @@ interface AIResponseCacheEntry {
   key: string
   mode: AIMode
   content: string
-  responseType: 'narrative_text' | 'rewrite' | 'ideas_list' | 'analysis' | 'qa'
+  responseType: 'narrative_text' | 'rewrite' | 'ideas_list' | 'analysis' | 'qa' | 'generated_image'
   insertable: boolean
   createdAt: string
 }
@@ -216,6 +216,7 @@ interface ProjectStore {
     preferredLanguage?: string
     systemPrompt?: string
     visualResources?: AIVisualResourcePayload[]
+    imageGeneration?: boolean
   }) => Promise<void>
   getAIConversationsByProject: (
     projectId: string,
@@ -297,6 +298,18 @@ function shouldCacheAIResponse(mode: AIMode) {
   return mode === 'revision' || mode === 'editorial'
 }
 
+function buildGeneratedImageResourceName(prompt: string, timestamp = new Date()) {
+  const cleanedPrompt = prompt
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 52)
+    .replace(/[^\p{L}\p{N}\s-]/gu, '')
+    .trim()
+
+  const suffix = timestamp.toISOString().slice(0, 10)
+  return cleanedPrompt ? `Imagen IA — ${cleanedPrompt} — ${suffix}` : `Imagen IA — ${suffix}`
+}
+
 function hashString(input: string) {
   let hash = 2166136261
 
@@ -313,6 +326,7 @@ function buildAIResponseCacheKey(input: {
   contextText?: string
   preferredLanguage?: string
   systemPrompt?: string
+  imageGeneration?: boolean
   customConfig?: AIRequestConfig
   messages: Array<{ role: 'user' | 'assistant'; content: string }>
 }) {
@@ -324,6 +338,7 @@ function buildAIResponseCacheKey(input: {
       baseURL: input.customConfig?.baseURL || '',
       preferredLanguage: input.preferredLanguage || '',
       systemPrompt: input.systemPrompt || '',
+      imageGeneration: input.imageGeneration || false,
       contextText: input.contextText || '',
       messages: input.messages,
     })
@@ -1399,6 +1414,7 @@ export const useProjectStore = create<ProjectStore>()(
         preferredLanguage,
         systemPrompt,
         visualResources,
+        imageGeneration,
       }) => {
         const conversation = get().aiConversations.find((chat) => chat.id === conversationId)
         if (!conversation || conversation.isGenerating) return
@@ -1422,6 +1438,7 @@ export const useProjectStore = create<ProjectStore>()(
               customConfig,
               preferredLanguage,
               systemPrompt,
+              imageGeneration,
               messages: requestMessages.map((message) => ({
                 role: message.role,
                 content: message.content,
@@ -1510,6 +1527,7 @@ export const useProjectStore = create<ProjectStore>()(
               customConfig,
               preferredLanguage,
               visualResources,
+              imageGeneration,
               messages: requestMessages.map((message) => ({
                 role: message.role,
                 content: message.content,
@@ -1524,6 +1542,35 @@ export const useProjectStore = create<ProjectStore>()(
           }
 
           const structuredResponse = await response.json()
+          let generatedImageResourceId: string | undefined
+          let generatedImageResourceName: string | undefined
+
+          if (
+            structuredResponse.generatedImage &&
+            typeof structuredResponse.generatedImage === 'object' &&
+            typeof structuredResponse.generatedImage.dataUrl === 'string' &&
+            structuredResponse.generatedImage.dataUrl.startsWith('data:image/')
+          ) {
+            const resourceName =
+              typeof structuredResponse.generatedImage.resourceName === 'string' &&
+              structuredResponse.generatedImage.resourceName.trim()
+                ? structuredResponse.generatedImage.resourceName.trim()
+                : buildGeneratedImageResourceName(trimmedContent)
+
+            const generatedResource = get().addResource(conversation.projectId, {
+              name: resourceName,
+              fileType: 'image',
+              fileData: structuredResponse.generatedImage.dataUrl,
+              description:
+                typeof structuredResponse.generatedImage.prompt === 'string'
+                  ? structuredResponse.generatedImage.prompt
+                  : trimmedContent,
+            })
+
+            generatedImageResourceId = generatedResource.id
+            generatedImageResourceName = generatedResource.name
+          }
+
           const safeContent =
             typeof structuredResponse.content === 'string' && structuredResponse.content.trim()
               ? structuredResponse.content
@@ -1542,6 +1589,24 @@ export const useProjectStore = create<ProjectStore>()(
             usage:
               structuredResponse.usage && typeof structuredResponse.usage === 'object'
                 ? structuredResponse.usage
+                : undefined,
+            generatedImage:
+              structuredResponse.generatedImage &&
+              typeof structuredResponse.generatedImage === 'object' &&
+              typeof structuredResponse.generatedImage.dataUrl === 'string'
+                ? {
+                    dataUrl: structuredResponse.generatedImage.dataUrl,
+                    mimeType:
+                      typeof structuredResponse.generatedImage.mimeType === 'string'
+                        ? structuredResponse.generatedImage.mimeType
+                        : undefined,
+                    prompt:
+                      typeof structuredResponse.generatedImage.prompt === 'string'
+                        ? structuredResponse.generatedImage.prompt
+                        : trimmedContent,
+                    resourceId: generatedImageResourceId,
+                    resourceName: generatedImageResourceName,
+                  }
                 : undefined,
           }
 

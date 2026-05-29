@@ -82,6 +82,10 @@ const RESPONSE_TYPE_META: Record<
     label: "Respuesta",
     variantClass: "border-muted bg-muted/50 text-foreground",
   },
+  generated_image: {
+    label: "Imagen generada",
+    variantClass: "border-fuchsia-500/20 bg-fuchsia-500/10 text-fuchsia-700",
+  },
 };
 
 function inferAIModeFromPrompt(text: string): AIMode {
@@ -218,6 +222,46 @@ function shouldAttachProjectImages(messageContent: string) {
     "ilustracion",
     "ilustración",
   ].some((signal) => normalized.includes(signal));
+}
+
+function shouldGenerateImage(messageContent: string, hasImageInputs: boolean) {
+  const normalized = messageContent.toLowerCase();
+  const imageTerms = [
+    "imagen",
+    "imágenes",
+    "imagenes",
+    "illustración",
+    "ilustración",
+    "ilustracion",
+    "portada",
+    "poster",
+    "afiche",
+    "concept art",
+    "arte conceptual",
+    "referencia visual",
+    "visual",
+  ];
+  const actionTerms = [
+    "genera",
+    "genera",
+    "crea",
+    "crear",
+    "haz",
+    "diseña",
+    "disena",
+    "ilustra",
+    "convierte",
+    "edita",
+    "editar",
+    "modifica",
+  ];
+  const asksForImage = imageTerms.some((term) => normalized.includes(term));
+  const asksForAction = actionTerms.some((term) => normalized.includes(term));
+  const asksForEdit = ["edita", "editar", "modifica", "convierte", "usa esta imagen"].some((term) =>
+    normalized.includes(term)
+  );
+
+  return (asksForImage && asksForAction) || (hasImageInputs && asksForEdit);
 }
 
 interface ComposerAttachment {
@@ -668,6 +712,9 @@ export function AIPanel({
     const visualResources = shouldAttachImages
       ? [...attachmentVisualResources, ...projectVisualResources].slice(0, 4)
       : undefined;
+    const imageGeneration =
+      effectiveRequestConfig.provider === "gemini" &&
+      shouldGenerateImage(messageContent, attachmentVisualResources.length > 0);
 
     updateAIConversation(targetConversation.id, { mode: resolvedMode });
     ensureConversationTitle(targetConversation, messageContent, resolvedMode);
@@ -686,6 +733,7 @@ export function AIPanel({
       preferredLanguage,
       systemPrompt: systemPromptOverride || resolvedModeConfig.buildSystemPrompt(preferredLanguage),
       visualResources,
+      imageGeneration,
     });
     setComposerAttachments([]);
   }, [activeConversation, attachmentTextContext, attachmentVisualResources, chapterId, chapterTitle, contextBuilder, contextText, createAIConversation, effectiveRequestConfig, ensureConversationTitle, fixedMode, projectId, projectTitle, projectVisualResources, prompt, requestAIResponse, systemPromptOverride, updateAIConversation, workspace]);
@@ -928,7 +976,7 @@ Reglas:
           className
         )}
       >
-        <aside className="hidden h-[calc(100dvh-11rem)] min-h-0 self-start overflow-hidden rounded-[1.75rem] border border-border/60 bg-zinc-950/65 shadow-[inset_0_1px_0_rgba(255,255,255,0.03)] lg:sticky lg:top-6 lg:flex">
+        <aside className="hidden h-[calc(100dvh-11rem)] min-h-0 self-start overflow-hidden rounded-[1.75rem] border border-border/60 bg-[linear-gradient(180deg,rgba(255,255,255,0.94),rgba(244,244,245,0.96))] shadow-[0_18px_50px_rgba(15,23,42,0.06)] dark:bg-[linear-gradient(180deg,rgba(24,24,27,0.96),rgba(9,9,11,0.94))] dark:shadow-[inset_0_1px_0_rgba(255,255,255,0.03)] lg:sticky lg:top-6 lg:flex">
           {cleanChatConversationList}
         </aside>
 
@@ -1021,6 +1069,20 @@ Reglas:
                       {msg.content}
                     </p>
                   )}
+                  {msg.generatedImage?.dataUrl ? (
+                    <div className="mt-5 max-w-2xl overflow-hidden rounded-[1.75rem] border border-border/70 bg-background/40">
+                      <img
+                        src={msg.generatedImage.dataUrl}
+                        alt={msg.generatedImage.prompt || "Imagen generada por IA"}
+                        className="h-auto w-full object-cover"
+                      />
+                      <div className="px-4 py-3 text-xs text-muted-foreground">
+                        {msg.generatedImage.resourceId
+                          ? `Guardada en Recursos${msg.generatedImage.resourceName ? ` como “${msg.generatedImage.resourceName}”` : ""}.`
+                          : "Imagen generada por IA."}
+                      </div>
+                    </div>
+                  ) : null}
                   {msg.role === "assistant" && msg.responseType && (
                     <div className="mt-5 flex flex-wrap items-center gap-2">
                       <span
@@ -1161,12 +1223,12 @@ Reglas:
               onDragLeave={handleComposerDragLeave}
             >
               <div className="mx-auto w-full max-w-5xl">
-                <div className="flex items-end gap-3 rounded-[2rem] border border-zinc-700/35 bg-zinc-800/95 px-5 py-4 shadow-[0_18px_60px_rgba(15,23,42,0.08)]">
+                <div className="flex items-end gap-3 rounded-[2rem] border border-border/70 bg-[linear-gradient(180deg,rgba(255,255,255,0.96),rgba(248,250,252,0.94))] px-5 py-4 shadow-[0_18px_60px_rgba(15,23,42,0.08)] dark:border-zinc-700/35 dark:bg-[linear-gradient(180deg,rgba(39,39,42,0.96),rgba(24,24,27,0.95))]">
                   <Button
                     type="button"
                     variant="ghost"
                     size="icon"
-                    className="mb-1 h-10 w-10 shrink-0 rounded-full text-zinc-400 hover:bg-white/5 hover:text-white"
+                    className="mb-1 h-10 w-10 shrink-0 rounded-full text-muted-foreground hover:bg-muted hover:text-foreground dark:text-zinc-400 dark:hover:bg-white/5 dark:hover:text-white"
                     onClick={() => attachmentInputRef.current?.click()}
                     disabled={isPreparingAttachments || isLoading}
                     aria-label="Adjuntar archivos"
@@ -1188,7 +1250,7 @@ Reglas:
                       }
                     }}
                     rows={1}
-                    className="min-h-12 flex-1 resize-none border-none !bg-transparent px-0 py-1 text-base leading-7 text-white shadow-none placeholder:text-zinc-500 focus-visible:border-none focus-visible:ring-0 dark:!bg-transparent"
+                    className="min-h-12 flex-1 resize-none border-none !bg-transparent px-0 py-1 text-base leading-7 text-foreground shadow-none placeholder:text-muted-foreground focus-visible:border-none focus-visible:ring-0 dark:text-white dark:placeholder:text-zinc-500 dark:!bg-transparent"
                   />
                   <div className="shrink-0 pl-2">
                     <Button
@@ -1197,7 +1259,7 @@ Reglas:
                       }}
                       size="icon"
                       disabled={(!prompt.trim() && composerAttachments.length === 0) || isLoading || isPreparingAttachments}
-                      className="h-11 w-11 rounded-full bg-zinc-200 text-zinc-900 hover:bg-zinc-100"
+                      className="h-11 w-11 rounded-full bg-foreground text-background hover:bg-foreground/90 dark:bg-zinc-200 dark:text-zinc-900 dark:hover:bg-zinc-100"
                     >
                       <Send className="h-4 w-4" />
                     </Button>
@@ -1811,12 +1873,12 @@ Reglas:
         >
           {isCleanChat ? (
             <div className="mx-auto w-full max-w-5xl">
-              <div className="flex items-end gap-3 rounded-[2rem] border border-zinc-700/35 bg-zinc-800/95 px-5 py-4 shadow-[0_18px_60px_rgba(15,23,42,0.08)]">
+              <div className="flex items-end gap-3 rounded-[2rem] border border-border/70 bg-[linear-gradient(180deg,rgba(255,255,255,0.96),rgba(248,250,252,0.94))] px-5 py-4 shadow-[0_18px_60px_rgba(15,23,42,0.08)] dark:border-zinc-700/35 dark:bg-[linear-gradient(180deg,rgba(39,39,42,0.96),rgba(24,24,27,0.95))]">
                 <Button
                   type="button"
                   variant="ghost"
                   size="icon"
-                  className="mb-1 h-10 w-10 shrink-0 rounded-full text-zinc-400 hover:bg-white/5 hover:text-white"
+                  className="mb-1 h-10 w-10 shrink-0 rounded-full text-muted-foreground hover:bg-muted hover:text-foreground dark:text-zinc-400 dark:hover:bg-white/5 dark:hover:text-white"
                   onClick={() => attachmentInputRef.current?.click()}
                   disabled={isPreparingAttachments || isLoading}
                   aria-label="Adjuntar archivos"
@@ -1838,7 +1900,7 @@ Reglas:
                     }
                   }}
                   rows={1}
-                  className="min-h-12 flex-1 resize-none border-none !bg-transparent dark:!bg-transparent px-0 py-1 text-base leading-7 text-white shadow-none placeholder:text-zinc-500 focus-visible:border-none focus-visible:ring-0"
+                  className="min-h-12 flex-1 resize-none border-none !bg-transparent px-0 py-1 text-base leading-7 text-foreground shadow-none placeholder:text-muted-foreground focus-visible:border-none focus-visible:ring-0 dark:text-white dark:placeholder:text-zinc-500 dark:!bg-transparent"
                 />
                 <div className="shrink-0 pl-2">
                   <Button
@@ -1847,7 +1909,7 @@ Reglas:
                     }}
                     size="icon"
                     disabled={(!prompt.trim() && composerAttachments.length === 0) || isLoading || isPreparingAttachments}
-                    className="h-11 w-11 rounded-full bg-zinc-200 text-zinc-900 hover:bg-zinc-100"
+                    className="h-11 w-11 rounded-full bg-foreground text-background hover:bg-foreground/90 dark:bg-zinc-200 dark:text-zinc-900 dark:hover:bg-zinc-100"
                   >
                     <Send className="h-4 w-4" />
                   </Button>

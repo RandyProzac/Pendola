@@ -11,6 +11,7 @@ import {
   Sparkles,
   WandSparkles,
 } from "lucide-react";
+import { ThemeToggle } from "@/components/layout/theme-toggle";
 import { SidebarTrigger } from "@/components/ui/sidebar";
 import { Button } from "@/components/ui/button";
 import { AIPanel } from "@/components/editor/ai-panel";
@@ -243,6 +244,7 @@ export default function IAProjectPage({ params }: PageProps) {
               </Button>
             </>
           ) : null}
+          <ThemeToggle />
         </div>
       </header>
 

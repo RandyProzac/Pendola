@@ -17,6 +17,13 @@ type ChatMessage = {
 
 type VisualResource = AIVisualResourcePayload;
 
+type GeminiInlinePart = {
+  inlineData: {
+    mimeType: string;
+    data: string;
+  };
+};
+
 function sanitizeMessages(input: unknown): ChatMessage[] {
   if (!Array.isArray(input)) return [];
 
@@ -87,6 +94,48 @@ function toImageData(resource: VisualResource) {
     }
 
     return new URL(resource.imageUrl);
+  } catch {
+    return null;
+  }
+}
+
+function parseDataUrl(dataUrl: string) {
+  const match = dataUrl.match(/^data:(.+?);base64,(.+)$/);
+  if (!match) return null;
+
+  return {
+    mimeType: match[1],
+    data: match[2],
+  };
+}
+
+async function visualResourceToGeminiPart(resource: VisualResource): Promise<GeminiInlinePart | null> {
+  if (resource.imageUrl.startsWith("data:")) {
+    const parsed = parseDataUrl(resource.imageUrl);
+    if (!parsed) return null;
+
+    return {
+      inlineData: {
+        mimeType: resource.mediaType || parsed.mimeType,
+        data: parsed.data,
+      },
+    };
+  }
+
+  try {
+    const imageResponse = await fetch(resource.imageUrl);
+    if (!imageResponse.ok) return null;
+
+    const mimeType = resource.mediaType || imageResponse.headers.get("content-type") || "image/png";
+    const arrayBuffer = await imageResponse.arrayBuffer();
+    const data = Buffer.from(arrayBuffer).toString("base64");
+
+    return {
+      inlineData: {
+        mimeType,
+        data,
+      },
+    };
   } catch {
     return null;
   }
@@ -617,6 +666,77 @@ function ensureStructuredContent({
   };
 }
 
+async function generateGeminiImage({
+  apiKey,
+  prompt,
+  visualResources,
+}: {
+  apiKey: string;
+  prompt: string;
+  visualResources: VisualResource[];
+}) {
+  const inlineParts = (
+    await Promise.all(visualResources.slice(0, 4).map((resource) => visualResourceToGeminiPart(resource)))
+  ).filter((part): part is GeminiInlinePart => Boolean(part));
+
+  const response = await fetch(
+    "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-image:generateContent",
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-goog-api-key": apiKey,
+      },
+      body: JSON.stringify({
+        contents: [
+          {
+            parts: [{ text: prompt }, ...inlineParts],
+          },
+        ],
+        generationConfig: {
+          responseModalities: ["TEXT", "IMAGE"],
+        },
+      }),
+    }
+  );
+
+  const payload = await response.json();
+
+  if (!response.ok) {
+    const message =
+      payload?.error?.message ||
+      payload?.error ||
+      "No se pudo generar la imagen con Gemini.";
+    throw new Error(message);
+  }
+
+  const parts = payload?.candidates?.[0]?.content?.parts ?? [];
+  const imagePart = parts.find((part: { inlineData?: { data?: string; mimeType?: string } }) => part.inlineData?.data);
+  const textPart = parts.find((part: { text?: string }) => typeof part.text === "string" && part.text.trim());
+
+  if (!imagePart?.inlineData?.data) {
+    throw new Error("Gemini no devolvió ninguna imagen en este intento.");
+  }
+
+  const mimeType = imagePart.inlineData.mimeType || "image/png";
+
+  return {
+    type: "generated_image" as const,
+    insertable: false,
+    content:
+      typeof textPart?.text === "string" && textPart.text.trim()
+        ? textPart.text.trim()
+        : "Aquí tienes una imagen generada para este proyecto.",
+    generatedImage: {
+      dataUrl: `data:${mimeType};base64,${imagePart.inlineData.data}`,
+      mimeType,
+      prompt,
+      resourceName: `Imagen IA`,
+    },
+    usage: undefined,
+  };
+}
+
 function buildStructuredFallbackFromText({
   mode,
   messages,
@@ -836,6 +956,7 @@ export async function POST(req: Request) {
       structured,
       preferredLanguage,
       visualResources: rawVisualResources,
+      imageGeneration,
     } = await req.json();
     const messages = sanitizeMessages(rawMessages);
     const visualResources = sanitizeVisualResources(rawVisualResources).slice(0, 3);
@@ -903,6 +1024,44 @@ export async function POST(req: Request) {
       messages,
       visualResources: provider !== "ollama" ? visualResources : [],
     });
+
+    if (imageGeneration) {
+      if (provider !== "gemini") {
+        return new Response(
+          JSON.stringify({
+            error: "La generación de imágenes por ahora está habilitada solo para Gemini.",
+          }),
+          {
+            status: 400,
+            headers: { "Content-Type": "application/json" },
+          }
+        );
+      }
+
+      if (!apiKey) {
+        return new Response(
+          JSON.stringify({
+            error: "Falta configurar la API key de Gemini para generar imágenes.",
+          }),
+          {
+            status: 400,
+            headers: { "Content-Type": "application/json" },
+          }
+        );
+      }
+
+      const lastUserPrompt = getLastUserMessage(messages);
+
+      return Response.json(
+        await generateGeminiImage({
+          apiKey,
+          prompt: contextText?.trim()
+            ? `${lastUserPrompt}\n\nContexto del proyecto:\n${contextText}`
+            : lastUserPrompt,
+          visualResources,
+        })
+      );
+    }
 
     if (structured) {
       if (provider === "ollama") {

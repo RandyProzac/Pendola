@@ -80,25 +80,25 @@ export function AppSidebar() {
 
   return (
     <Sidebar variant="sidebar" collapsible="icon">
-      <SidebarHeader className="border-b border-sidebar-border">
+      <SidebarHeader className="h-14 shrink-0 p-0">
         <SidebarMenu>
           <SidebarMenuItem>
             <SidebarMenuButton
               size="lg"
               onClick={() => router.push('/')}
-              className="cursor-pointer"
+              className="h-14 min-h-0 cursor-pointer px-3 py-0"
             >
               <div className="flex aspect-square size-8 items-center justify-center rounded-lg bg-gradient-to-br from-violet-600 to-indigo-700 text-sidebar-primary-foreground">
                 <Feather className="size-4" />
               </div>
-              <div className="flex flex-col gap-0.5 leading-none">
+              <div className="flex flex-col justify-center leading-none">
                 <span className="font-semibold text-sm">Péndola</span>
-                <span className="text-xs text-muted-foreground">Escritura Narrativa</span>
               </div>
             </SidebarMenuButton>
           </SidebarMenuItem>
         </SidebarMenu>
       </SidebarHeader>
+      <div className="mx-4 border-b border-sidebar-border/80" />
 
       <SidebarContent>
         {/* Projects Section */}

@@ -386,9 +386,16 @@ export interface AIChatMessage {
   content: string
   timestamp: string
   mode?: AIMode
-  responseType?: 'narrative_text' | 'rewrite' | 'ideas_list' | 'analysis' | 'qa'
+  responseType?: 'narrative_text' | 'rewrite' | 'ideas_list' | 'analysis' | 'qa' | 'generated_image'
   insertable?: boolean
   usage?: AIUsageSnapshot
+  generatedImage?: {
+    dataUrl: string
+    mimeType?: string
+    prompt?: string
+    resourceId?: string
+    resourceName?: string
+  }
 }
 
 export interface AIConversation {

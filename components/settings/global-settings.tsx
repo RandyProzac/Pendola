@@ -29,7 +29,7 @@ const FONT_SIZE_OPTIONS = [16, 18, 20, 22];
 const LINE_HEIGHT_OPTIONS = [1.65, 1.8, 1.95, 2.1];
 
 const FONT_LABELS: Record<WriterFontOption, string> = {
-  editorial: "Serif editorial",
+  editorial: "EB Garamond",
   clasica: "Serif clásica",
   moderna: "Serif moderna",
   sans: "Sans de lectura",

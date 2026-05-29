@@ -22,6 +22,7 @@ import {
   Italic,
   Underline as UnderlineIcon,
   Strikethrough,
+  Pilcrow,
   Heading1,
   Heading2,
   Heading3,
@@ -334,6 +335,7 @@ function EditorToolbar({
   const toolbarState = useEditorState({
     editor,
     selector: ({ editor: currentEditor }) => ({
+      isParagraph: currentEditor.isActive("paragraph"),
       isBold: currentEditor.isActive("bold"),
       isItalic: currentEditor.isActive("italic"),
       isUnderline: currentEditor.isActive("underline"),
@@ -499,6 +501,13 @@ function EditorToolbar({
       <Separator orientation="vertical" className="h-6 mx-1" />
 
       {/* Headings */}
+      <ToolbarButton
+        onClick={() => editor.chain().focus().setParagraph().run()}
+        isActive={toolbarState.isParagraph}
+        tooltip="Párrafo"
+      >
+        <Pilcrow className="h-4 w-4" />
+      </ToolbarButton>
       <ToolbarButton
         onClick={() => editor.chain().focus().toggleHeading({ level: 1 }).run()}
         isActive={toolbarState.isHeading1}
